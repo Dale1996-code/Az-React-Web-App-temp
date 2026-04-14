@@ -38,18 +38,17 @@ const Header: FC = (): ReactElement => {
     return (
         <Stack horizontal>
             <Stack horizontal styles={logoStyles}>
-                <FontIcon aria-label="Check" iconName="SkypeCircleCheck" className={logoIconClass} />
-                <Text variant="xLarge">ToDo</Text>
+                <FontIcon aria-label="Store" iconName="Store" className={logoIconClass} />
+                <Text variant="xLarge">Dales Operations</Text>
             </Stack>
             <Stack.Item grow={1}>
                 <div></div>
             </Stack.Item>
             <Stack.Item>
                 <Stack horizontal styles={toolStackClass} grow={1}>
-                    <IconButton aria-label="Add" iconProps={{ iconName: "Settings", ...iconProps }} />
-                    <IconButton aria-label="Add" iconProps={{ iconName: "Help", ...iconProps }} />
-                    <Persona size={PersonaSize.size24} text="Sample User" />
-                    {/* <Toggle label="Dark Mode" inlineLabel styles={{ root: { marginBottom: 0 } }} onChange={changeTheme} /> */}
+                    <IconButton aria-label="Settings" iconProps={{ iconName: 'Settings', ...iconProps }} />
+                    <IconButton aria-label="Help" iconProps={{ iconName: 'Help', ...iconProps }} />
+                    <Persona size={PersonaSize.size24} text="Shift Lead" />
                 </Stack>
             </Stack.Item>
         </Stack>
