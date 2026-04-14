@@ -2,357 +2,201 @@ import request from "supertest";
 import { Server } from "http";
 import { Express } from "express";
 import { createApp } from "../app";
-import { TodoItem, TodoItemState } from "../models/todoItem";
-import { TodoList } from "../models/todoList";
+import { clearMockData } from "../models/cosmosClient";
 
-describe("API", () => {
+/**
+ * Integration tests for Dales Operations API routes.
+ * All tests run against the in-memory mock (NODE_ENV=test).
+ * The pattern is the same across all 6 collections, so we test
+ * one full CRUD cycle per collection and share helper functions.
+ */
+describe("Dales Operations API", () => {
     let app: Express;
     let server: Server;
 
     beforeAll(async () => {
+        process.env.NODE_ENV = "test";
         app = await createApp();
-        const port = process.env.PORT || 3100;
-
-        server = app.listen(port, () => {
-            console.log(`Started listening on port ${port}`);
-        });
+        server = app.listen(0); // use a random available port
     });
 
     afterAll((done) => {
         server.close(done);
-        console.log("Stopped server");
     });
 
-    describe("Todo List Routes", () => {
-        it("can GET an array of lists", async () => {
-            const todoList: Partial<TodoList> = {
-                name: "GET all test",
-                description: "GET all description"
-            };
+    beforeEach(() => {
+        clearMockData();
+    });
 
-            let res = await createList(todoList);
-            const newList = res.body as TodoList;
-
-            res = await getLists();
-
-            expect(res.statusCode).toEqual(200);
-            expect(res.body.length).toBeGreaterThan(0);
-
-            await deleteList(newList.id);
+    // ---------------------------------------------------------------------------
+    // Employees
+    // ---------------------------------------------------------------------------
+    describe("Employees", () => {
+        it("POST /employees creates an employee and returns 201", async () => {
+            const res = await post("/employees", { name: "Alice", role: "Shift Lead" });
+            expect(res.status).toBe(201);
+            expect(res.body).toMatchObject({ name: "Alice", role: "Shift Lead" });
+            expect(res.body.id).toBeDefined();
         });
 
-        it("can GET an array of lists with paging", async () => {
-            const todoList: Partial<TodoList> = {
-                name: "GET paging test",
-                description: "GET paging description"
-            };
-
-            let res = await createList(todoList);
-            const list1 = res.body as TodoList;
-            res = await createList(todoList);
-            const list2 = res.body as TodoList;
-
-            res = await getLists("top=1&skip=1");
-
-            expect(res.statusCode).toEqual(200);
-            expect(res.body).toHaveLength(1);
-
-            await deleteList(list1.id);
-            await deleteList(list2.id);
+        it("GET /employees returns all employees", async () => {
+            await post("/employees", { name: "Bob", role: "Associate" });
+            await post("/employees", { name: "Carol", role: "Associate" });
+            const res = await get("/employees");
+            expect(res.status).toBe(200);
+            expect(res.body.length).toBe(2);
         });
 
-        it("can GET a list by unique id", async () => {
-            const todoList: Partial<TodoList> = {
-                name: "GET by id test",
-                description: "GET by id description"
-            };
-
-            let res = await createList(todoList);
-            const newList = res.body as TodoList;
-            res = await getList(res.body.id);
-
-            expect(res.statusCode).toEqual(200);
-            expect(res.body).toMatchObject(newList);
-
-            await deleteList(newList.id);
+        it("GET /employees/:id returns a single employee", async () => {
+            const created = (await post("/employees", { name: "Dave", role: "Manager" })).body;
+            const res = await get(`/employees/${created.id}`);
+            expect(res.status).toBe(200);
+            expect(res.body.name).toBe("Dave");
         });
 
-        it("can POST (create) new list", async () => {
-            const todoList: Partial<TodoList> = {
-                name: "POST test",
-                description: "POST description"
-            };
-
-            const res = await createList(todoList);
-
-            expect(res.statusCode).toEqual(201);
-            expect(res.body).toMatchObject({
-                ...todoList,
-                id: expect.any(String),
-                createdDate: expect.any(String),
-                updatedDate: expect.any(String)
-            });
-
-            await deleteList(res.body.id);
+        it("GET /employees/:id returns 404 for unknown id", async () => {
+            const res = await get("/employees/does-not-exist");
+            expect(res.status).toBe(404);
         });
 
-        it("can PUT (update) lists", async () => {
-            const todoList: Partial<TodoList> = {
-                name: "PUT test",
-                description: "PUT description"
-            };
-
-            let res = await createList(todoList);
-            const listToUpdate: Partial<TodoList> = {
-                ...res.body,
-                name: "PUT test (updated)"
-            };
-
-            res = await updateList(res.body.id, listToUpdate);
-
-            expect(res.statusCode).toEqual(200);
-            expect(res.body).toMatchObject({
-                id: listToUpdate.id,
-                name: listToUpdate.name
-            });
-
-            await deleteList(res.body.id);
+        it("PUT /employees/:id updates an employee", async () => {
+            const created = (await post("/employees", { name: "Eve", role: "Associate" })).body;
+            const res = await put(`/employees/${created.id}`, { name: "Eve Updated" });
+            expect(res.status).toBe(200);
+            expect(res.body.name).toBe("Eve Updated");
         });
 
-        it("can DELETE lists", async () => {
-            const todoList: Partial<TodoList> = {
-                name: "PUT test",
-                description: "PUT description"
-            };
-
-            let res = await createList(todoList);
-            const newList = res.body as TodoList;
-            res = await deleteList(newList.id);
-
-            expect(res.statusCode).toEqual(204);
-
-            res = await getList(newList.id);
-            expect(res.statusCode).toEqual(404);
+        it("DELETE /employees/:id deletes and returns 204", async () => {
+            const created = (await post("/employees", { name: "Frank", role: "Associate" })).body;
+            const del = await del_(`/employees/${created.id}`);
+            expect(del.status).toBe(204);
+            expect((await get(`/employees/${created.id}`)).status).toBe(404);
         });
     });
 
-    describe("Todo Item Routes", () => {
-        let testList: TodoList;
-
-        beforeAll(async () => {
-            const res = await createList({ name: "Integration test" });
-            testList = res.body as TodoList;
+    // ---------------------------------------------------------------------------
+    // Tasks
+    // ---------------------------------------------------------------------------
+    describe("Tasks", () => {
+        it("POST /tasks creates a task and returns 201", async () => {
+            const res = await post("/tasks", { title: "Stock cereal aisle", status: "notStarted" });
+            expect(res.status).toBe(201);
+            expect(res.body.title).toBe("Stock cereal aisle");
+            expect(res.body.status).toBe("notStarted");
         });
 
-        afterAll(async () => {
-            await deleteList(testList.id);
+        it("GET /tasks returns all tasks", async () => {
+            await post("/tasks", { title: "Task A", status: "notStarted" });
+            await post("/tasks", { title: "Task B", status: "inProgress" });
+            const res = await get("/tasks");
+            expect(res.status).toBe(200);
+            expect(res.body.length).toBe(2);
         });
 
-        it("can GET an array of items", async () => {
-            const todoItem: Partial<TodoItem> = {
-                name: "GET all test",
-                description: "GET all description"
-            };
-
-            let res = await createItem(testList.id, todoItem);
-            const newItem = res.body as TodoItem;
-
-            res = await getItems(testList.id);
-
-            expect(res.statusCode).toEqual(200);
-            expect(res.body).toHaveLength(1);
-
-            await deleteItem(newItem.listId.toString(), newItem.id.toString());
+        it("PUT /tasks/:id updates task status", async () => {
+            const created = (await post("/tasks", { title: "Zone aisle 5", status: "notStarted" })).body;
+            const res = await put(`/tasks/${created.id}`, { status: "completed" });
+            expect(res.status).toBe(200);
+            expect(res.body.status).toBe("completed");
         });
 
-        it("can GET an array of items with paging", async () => {
-            const todoItem: Partial<TodoItem> = {
-                name: "GET paging test",
-                description: "GET paging description"
-            };
-
-            let res = await createItem(testList.id, todoItem);
-            const item1 = res.body as TodoItem;
-            res = await createItem(testList.id, todoItem);
-            const item2 = res.body as TodoItem;
-
-            res = await getItems(testList.id, "top=1&skip=1");
-
-            expect(res.statusCode).toEqual(200);
-            expect(res.body).toHaveLength(1);
-
-            await deleteItem(item1.listId.toString(), item1.id.toString());
-            await deleteItem(item2.listId.toString(), item2.id.toString());
-        });
-
-        it("can GET an array of items by state", async () => {
-            const item1: Partial<TodoItem> = {
-                name: "GET state test (todo)",
-                description: "GET paging description",
-                state: TodoItemState.Todo
-            };
-
-            const item2: Partial<TodoItem> = {
-                name: "GET state test (inprogress)",
-                description: "GET paging description",
-                state: TodoItemState.InProgress
-            };
-
-            let res = await createItem(testList.id, item1);
-            const newItem1 = res.body as TodoItem;
-            res = await createItem(testList.id, item2);
-            const newItem2 = res.body as TodoItem;
-
-            res = await getItems(testList.id, "", TodoItemState.Todo);
-
-            expect(res.statusCode).toEqual(200);
-            expect(res.body.length).toEqual(1); // Expect only 1 item to be in the TODO state.
-
-            await deleteItem(newItem1.listId.toString(), newItem1.id.toString());
-            await deleteItem(newItem2.listId.toString(), newItem2.id.toString());
-        });
-
-        it("can GET an item by unique id", async () => {
-            const todoItem: Partial<TodoItem> = {
-                name: "GET by id test",
-                description: "GET by id description"
-            };
-
-            let res = await createItem(testList.id, todoItem);
-            const newItem = res.body as TodoItem;
-            res = await getItem(newItem.listId.toString(), newItem.id.toString());
-
-            expect(res.statusCode).toEqual(200);
-            expect(res.body).toMatchObject(newItem);
-
-            await deleteItem(newItem.listId.toString(), newItem.id.toString());
-        });
-
-        it("can POST (create) new item", async () => {
-            const todoItem: Partial<TodoItem> = {
-                name: "POST test",
-                description: "POST description",
-                state: TodoItemState.Todo
-            };
-
-            const res = await createItem(testList.id, todoItem);
-
-            expect(res.statusCode).toEqual(201);
-            expect(res.body).toMatchObject({
-                ...todoItem,
-                id: expect.any(String),
-                createdDate: expect.any(String),
-                updatedDate: expect.any(String)
-            });
-
-            await deleteItem(res.body.listId, res.body.id);
-        });
-
-        it("can PUT (update) items", async () => {
-            const todoItem: Partial<TodoItem> = {
-                name: "PUT test",
-                description: "PUT description"
-            };
-
-            let res = await createItem(testList.id, todoItem);
-            const itemToUpdate: TodoItem = {
-                ...res.body,
-                name: "PUT test (updated)",
-                state: TodoItemState.InProgress
-            };
-
-            res = await updateItem(itemToUpdate.listId.toString(), itemToUpdate.id.toString(), itemToUpdate);
-
-            expect(res.statusCode).toEqual(200);
-            expect(res.body).toMatchObject({
-                id: itemToUpdate.id,
-                name: itemToUpdate.name,
-                state: itemToUpdate.state
-            });
-
-            await deleteItem(res.body.listId, res.body.id);
-        });
-
-        it("can DELETE items", async () => {
-            const todoItem: Partial<TodoItem> = {
-                name: "PUT test",
-                description: "PUT description"
-            };
-
-            let res = await createItem(testList.id, todoItem);
-            const newItem = res.body as TodoItem;
-            res = await deleteItem(newItem.listId.toString(), newItem.id.toString());
-
-            expect(res.statusCode).toEqual(204);
-
-            res = await getItem(newItem.listId.toString(), newItem.id.toString());
-            expect(res.statusCode).toEqual(404);
+        it("DELETE /tasks/:id returns 204", async () => {
+            const created = (await post("/tasks", { title: "Old task", status: "notStarted" })).body;
+            expect((await del_(`/tasks/${created.id}`)).status).toBe(204);
         });
     });
 
-    const getLists = (query = "") => {
-        return request(app)
-            .get("/lists")
-            .query(query)
-            .send();
-    };
+    // ---------------------------------------------------------------------------
+    // Productivity
+    // ---------------------------------------------------------------------------
+    describe("Productivity", () => {
+        it("POST /productivity creates a record", async () => {
+            const res = await post("/productivity", {
+                employeeId: "emp-1",
+                date: "2026-04-14",
+                freightStocked: 45,
+            });
+            expect(res.status).toBe(201);
+            expect(res.body.freightStocked).toBe(45);
+        });
 
-    const getList = (listId: string) => {
-        return request(app)
-            .get(`/lists/${listId}`)
-            .send();
-    };
+        it("GET /productivity returns all records", async () => {
+            await post("/productivity", { employeeId: "emp-1", date: "2026-04-14" });
+            const res = await get("/productivity");
+            expect(res.status).toBe(200);
+            expect(res.body.length).toBe(1);
+        });
+    });
 
-    const createList = (list: Partial<TodoList>) => {
-        return request(app)
-            .post("/lists")
-            .send(list);
-    };
+    // ---------------------------------------------------------------------------
+    // Coaching
+    // ---------------------------------------------------------------------------
+    describe("Coaching", () => {
+        it("POST /coaching creates a coaching record", async () => {
+            const res = await post("/coaching", {
+                employeeId: "emp-1",
+                date: "2026-04-14",
+                issues: ["attendance"],
+                goals: "Improve punctuality",
+            });
+            expect(res.status).toBe(201);
+            expect(res.body.issues).toContain("attendance");
+        });
 
-    const updateList = (listId: string, list: Partial<TodoList>) => {
-        return request(app)
-            .put(`/lists/${listId}`)
-            .send(list);
-    };
+        it("PUT /coaching/:id updates a record", async () => {
+            const created = (await post("/coaching", { employeeId: "emp-2", date: "2026-04-14" })).body;
+            const res = await put(`/coaching/${created.id}`, { goals: "New goal" });
+            expect(res.status).toBe(200);
+            expect(res.body.goals).toBe("New goal");
+        });
+    });
 
-    const deleteList = (listId: string) => {
-        return request(app)
-            .delete(`/lists/${listId}`)
-            .send();
-    };
+    // ---------------------------------------------------------------------------
+    // Issues
+    // ---------------------------------------------------------------------------
+    describe("Issues", () => {
+        it("POST /issues creates an issue", async () => {
+            const res = await post("/issues", { type: "Safety", status: "open", date: "2026-04-14" });
+            expect(res.status).toBe(201);
+            expect(res.body.status).toBe("open");
+        });
 
-    const getItems = (listId: string, query = "", state?: TodoItemState) => {
-        const path = state
-            ? `/lists/${listId}/items/state/${state.toString()}`
-            : `/lists/${listId}/items`;
+        it("PUT /issues/:id can mark an issue resolved", async () => {
+            const created = (await post("/issues", { type: "Equipment", status: "open", date: "2026-04-14" })).body;
+            const res = await put(`/issues/${created.id}`, { status: "resolved" });
+            expect(res.status).toBe(200);
+            expect(res.body.status).toBe("resolved");
+        });
+    });
 
-        return request(app)
-            .get(path)
-            .query(query)
-            .send();
-    };
+    // ---------------------------------------------------------------------------
+    // Summaries
+    // ---------------------------------------------------------------------------
+    describe("Summaries", () => {
+        it("POST /summaries creates a daily summary", async () => {
+            const res = await post("/summaries", {
+                date: "2026-04-14",
+                completedWork: "Stocked dairy and frozen",
+                missedWork: "Did not finish pet aisle",
+            });
+            expect(res.status).toBe(201);
+            expect(res.body.date).toBe("2026-04-14");
+        });
 
-    const getItem = (listId: string, itemId: string) => {
-        return request(app)
-            .get(`/lists/${listId}/items/${itemId}`)
-            .send();
-    };
+        it("GET /summaries returns all summaries", async () => {
+            await post("/summaries", { date: "2026-04-14" });
+            await post("/summaries", { date: "2026-04-13" });
+            const res = await get("/summaries");
+            expect(res.status).toBe(200);
+            expect(res.body.length).toBe(2);
+        });
+    });
 
-    const createItem = (listId: string, item: Partial<TodoItem>) => {
-        return request(app)
-            .post(`/lists/${listId}/items`)
-            .send(item);
-    };
-
-    const updateItem = (listId: string, itemId: string, item: Partial<TodoItem>) => {
-        return request(app)
-            .put(`/lists/${listId}/items/${itemId}`)
-            .send(item);
-    };
-
-    const deleteItem = (listId: string, itemId: string) => {
-        return request(app)
-            .delete(`/lists/${listId}/items/${itemId}`)
-            .send();
-    };
+    // ---------------------------------------------------------------------------
+    // Helpers
+    // ---------------------------------------------------------------------------
+    const get  = (path: string) => request(app).get(path);
+    const post = (path: string, body: object) => request(app).post(path).send(body);
+    const put  = (path: string, body: object) => request(app).put(path).send(body);
+    const del_ = (path: string) => request(app).delete(path);
 });

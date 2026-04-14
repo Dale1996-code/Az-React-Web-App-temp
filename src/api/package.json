@@ -1,7 +1,7 @@
 {
-  "name": "todo-node-ts-express-mongo",
+  "name": "dales-operations-api",
   "version": "0.1.0",
-  "description": "Express Todo REST API",
+  "description": "Dales Operations REST API — store operations and shift management",
   "main": "dist/index.js",
   "scripts": {
     "lint": "eslint src/**/*.ts",
