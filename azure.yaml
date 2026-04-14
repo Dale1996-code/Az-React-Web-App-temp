@@ -1,8 +1,8 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
 
-name: todo-nodejs-mongo
+name: dales-operations
 metadata:
-  template: todo-nodejs-mongo@0.0.1-beta
+  template: dales-operations@0.1.0
 workflows:
   up: 
     steps:

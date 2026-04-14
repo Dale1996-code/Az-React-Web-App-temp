@@ -2,22 +2,36 @@ param accountName string
 param location string = resourceGroup().location
 param tags object = {}
 param cosmosDatabaseName string = ''
+
+// Default containers for Dales Operations — one per domain collection
 param containers array = [
   {
-    name: 'TodoList'
-    paths: [
-      '/id'
-    ]
+    name: 'employees'
+    paths: [ '/id' ]
   }
   {
-    name: 'TodoItem'
-    paths: [
-      '/id'
-    ]
+    name: 'tasks'
+    paths: [ '/id' ]
+  }
+  {
+    name: 'productivity'
+    paths: [ '/id' ]
+  }
+  {
+    name: 'coaching'
+    paths: [ '/id' ]
+  }
+  {
+    name: 'issues'
+    paths: [ '/id' ]
+  }
+  {
+    name: 'summaries'
+    paths: [ '/id' ]
   }
 ]
 
-var defaultDatabaseName = 'Todo'
+var defaultDatabaseName = 'DalesOperations'
 var actualDatabaseName = !empty(cosmosDatabaseName) ? cosmosDatabaseName : defaultDatabaseName
 
 module cosmos 'br/public:avm/res/document-db/database-account:0.6.0' = {
