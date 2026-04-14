@@ -1,118 +1,72 @@
-
 import { CosmosClient, Container, Database } from "@azure/cosmos";
 import { DefaultAzureCredential } from "@azure/identity";
 import { DatabaseConfig } from "../config/appConfig";
 import { logger } from "../config/observability";
 
+// Names of all Dales Operations Cosmos DB containers.
+// These must match the container names defined in infra/app/db-avm.bicep.
+export const containerNames = [
+    "employees",
+    "tasks",
+    "productivity",
+    "coaching",
+    "issues",
+    "summaries",
+] as const;
+
+export type ContainerName = typeof containerNames[number];
+
 let cosmosClient: CosmosClient;
 let database: Database;
-let todoListContainer: Container;
-let todoItemContainer: Container;
+const containers: Partial<Record<ContainerName, Container>> = {};
 
 export const configureCosmos = async (config: DatabaseConfig) => {
-    // Skip Cosmos DB configuration in test environment
+    // Skip Cosmos DB configuration in test environment — routes will use the in-memory mock.
     if (process.env.NODE_ENV === "test") {
         logger.info("Skipping Cosmos DB configuration in test environment");
         return;
     }
-    
+
     try {
         logger.info("Connecting to Cosmos DB using managed identity...");
-        
+
         const credential = new DefaultAzureCredential();
-        
+
         cosmosClient = new CosmosClient({
             endpoint: config.endpoint,
             aadCredentials: credential,
         });
 
         database = cosmosClient.database(config.databaseName);
-        todoListContainer = database.container("TodoList");
-        todoItemContainer = database.container("TodoItem");
+
+        // Cache a Container handle for each Dales Operations collection.
+        for (const name of containerNames) {
+            containers[name] = database.container(name);
+        }
 
         // Test the connection
         await database.read();
         logger.info("Cosmos DB connected successfully!");
-        
     } catch (err) {
         logger.error(`Cosmos DB connection error: ${err}`);
         throw err;
     }
 };
 
-export const getTodoListContainer = () => {
+/**
+ * Returns the Cosmos DB Container for the given Dales Operations collection.
+ * In test mode, returns an in-memory mock so route handlers can run without a real DB.
+ */
+export const getContainer = (name: ContainerName): Container => {
     if (process.env.NODE_ENV === "test") {
-        // Return a mock container for testing
-        return createMockContainer();
+        return createMockContainer(name) as unknown as Container;
     }
-    if (!todoListContainer) {
-        throw new Error("Cosmos DB not initialized. Call configureCosmos first.");
+    const container = containers[name];
+    if (!container) {
+        throw new Error(`Cosmos DB container "${name}" not initialized. Call configureCosmos first.`);
     }
-    return todoListContainer;
+    return container;
 };
-
-export const getTodoItemContainer = () => {
-    if (process.env.NODE_ENV === "test") {
-        // Return a mock container for testing
-        return createMockContainer();
-    }
-    if (!todoItemContainer) {
-        throw new Error("Cosmos DB not initialized. Call configureCosmos first.");
-    }
-    return todoItemContainer;
-};
-
-// Mock container for testing
-const mockData = new Map<string, any>();
-
-const createMockContainer = () => ({
-    items: {
-        create: async (item: any) => { 
-            const resource = { 
-                id: `mock-${Date.now()}-${Math.random()}`, 
-                ...item,
-                createdDate: new Date(),
-                updatedDate: new Date()
-            };
-            mockData.set(resource.id, resource);
-            return { resource };
-        },
-        readAll: () => ({ 
-            fetchAll: async () => ({ 
-                resources: Array.from(mockData.values()) 
-            }) 
-        }),
-        query: (spec: any) => ({ 
-            fetchAll: async () => {
-                const resources = Array.from(mockData.values());
-                // Simple query implementation for tests
-                if (spec.query && spec.query.includes("listId")) {
-                    const listIdParam = spec.parameters?.find((p: any) => p.name === "@listId");
-                    if (listIdParam) {
-                        return {
-                            resources: resources.filter((r: any) => r.listId === listIdParam.value)
-                        };
-                    }
-                }
-                return { resources };
-            }
-        }),
-    },
-    item: (id: string) => ({
-        read: async () => ({ 
-            resource: mockData.get(id) || null 
-        }),
-        replace: async (item: any) => { 
-            const resource = { ...item, updatedDate: new Date() };
-            mockData.set(id, resource);
-            return { resource };
-        },
-        delete: async () => {
-            mockData.delete(id);
-            return {};
-        },
-    }),
-});
 
 export const getCosmosClient = () => {
     if (!cosmosClient) {
@@ -121,8 +75,65 @@ export const getCosmosClient = () => {
     return cosmosClient;
 };
 
+// ---------------------------------------------------------------------------
+// In-memory mock used only when NODE_ENV=test
+// ---------------------------------------------------------------------------
+
+// Each container gets its own Map so test data does not bleed across collections.
+const mockData: Record<string, Map<string, unknown>> = {};
+
+const getMockStore = (containerName: string): Map<string, unknown> => {
+    if (!mockData[containerName]) {
+        mockData[containerName] = new Map<string, unknown>();
+    }
+    return mockData[containerName];
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const createMockContainer = (containerName: ContainerName) => {
+    const store = getMockStore(containerName);
+
+    return {
+        items: {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            create: async (item: any) => {
+                store.set(item.id, item);
+                return { resource: item };
+            },
+            readAll: () => ({
+                fetchAll: async () => ({ resources: Array.from(store.values()) }),
+            }),
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            query: (_spec: any) => ({
+                fetchAll: async () => ({ resources: Array.from(store.values()) }),
+            }),
+        },
+        item: (id: string) => ({
+            read: async () => ({ resource: store.get(id) ?? null }),
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            replace: async (item: any) => {
+                store.set(id, item);
+                return { resource: item };
+            },
+            delete: async () => {
+                if (!store.has(id)) {
+                    // Match Cosmos SDK behavior: throw a 404-shaped error
+                    const err = new Error("Not found") as Error & { code?: number };
+                    err.code = 404;
+                    throw err;
+                }
+                store.delete(id);
+                return {};
+            },
+        }),
+    };
+};
+
+// Allows tests to reset the in-memory store between runs.
 export const clearMockData = () => {
     if (process.env.NODE_ENV === "test") {
-        mockData.clear();
+        for (const key of Object.keys(mockData)) {
+            mockData[key].clear();
+        }
     }
 };

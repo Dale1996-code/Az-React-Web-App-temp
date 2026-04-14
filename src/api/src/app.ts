@@ -3,13 +3,17 @@ import swaggerUI from "swagger-ui-express";
 import cors from "cors";
 import yaml from "yamljs";
 import { getConfig } from "./config";
-import lists from "./routes/lists";
-import items from "./routes/items";
+import employees from "./routes/employees";
+import tasks from "./routes/tasks";
+import productivity from "./routes/productivity";
+import coaching from "./routes/coaching";
+import issues from "./routes/issues";
+import summaries from "./routes/summaries";
 import { configureCosmos } from "./models/cosmosClient";
 import { observability } from "./config/observability";
 
 // Use API_ALLOW_ORIGINS env var with comma separated urls like
-// `http://localhost:300, http://otherurl:100`
+// `http://localhost:3000, http://otherurl:100`
 // Requests coming to the api server from other urls will be rejected as per
 // CORS.
 const allowOrigins = process.env.API_ALLOW_ORIGINS;
@@ -19,13 +23,13 @@ const allowOrigins = process.env.API_ALLOW_ORIGINS;
 // allowing all origins.
 const environment = process.env.NODE_ENV;
 
-const originList = ():string[]|string => {
-    
+const originList = (): string[] | string => {
+
     if (environment && environment === "development") {
         console.log(`Allowing requests from any origins. NODE_ENV=${environment}`);
         return "*";
     }
-    
+
     const origins = [
         "https://portal.azure.com",
         "https://ms.portal.azure.com",
@@ -47,18 +51,22 @@ export const createApp = async (): Promise<Express> => {
     // Configuration
     observability(config.observability);
     await configureCosmos(config.database);
+
     // Middleware
     app.use(express.json());
-    
     app.use(cors({
         origin: originList()
     }));
 
-    // API Routes
-    app.use("/lists/:listId/items", items);
-    app.use("/lists", lists);
+    // Dales Operations API routes — one router per domain collection.
+    app.use("/employees", employees);
+    app.use("/tasks", tasks);
+    app.use("/productivity", productivity);
+    app.use("/coaching", coaching);
+    app.use("/issues", issues);
+    app.use("/summaries", summaries);
 
-    // Swagger UI
+    // Swagger UI for the OpenAPI spec
     const swaggerDocument = yaml.load("./openapi.yaml");
     app.use("/", swaggerUI.serve, swaggerUI.setup(swaggerDocument));
 
