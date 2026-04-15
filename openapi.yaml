@@ -1,3 +1,6 @@
+# Authoritative source: src/api/openapi.yaml
+# This root copy exists for tooling discovery (e.g. GitHub, API gateways).
+# Keep these two files in sync when updating the spec.
 openapi: 3.0.0
 info:
   description: Dales Operations API — store operations and shift management
