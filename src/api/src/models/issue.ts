@@ -6,9 +6,12 @@ export type IssueStatus = "open" | "resolved";
  * A logged shift issue (safety, equipment, customer, etc.).
  */
 export interface IssueLog extends BaseEntity {
-    type: string;
+    storeDate: string;              // ISO date string (YYYY-MM-DD)
+    category: string;
     status: IssueStatus;
-    date: string; // ISO date string (YYYY-MM-DD)
-    notes?: string;
-    department?: string;
+    department: string;
+    description: string;
+    reportedByEmployeeId?: string;
+    resolvedAt?: string;            // ISO datetime string
+    resolutionNotes?: string;
 }

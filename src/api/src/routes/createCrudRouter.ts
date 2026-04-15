@@ -1,5 +1,6 @@
 import express, { Request, Router } from "express";
 import { BaseEntity, BaseRepository } from "../models/baseRepository";
+import { Validator } from "../validation";
 import { PagingQueryParams } from "./common";
 
 /**
@@ -14,10 +15,16 @@ import { PagingQueryParams } from "./common";
  *
  * `getRepository` is a factory rather than a value so that the underlying
  * Cosmos DB container is resolved lazily — after configureCosmos has run.
+ *
+ * `validate` is an optional per-collection validator called before every
+ * POST (isUpdate=false) and PUT (isUpdate=true).  When validation fails the
+ * router returns 400 { error, details }.  When it passes, the sanitized
+ * (allowlisted + trimmed) body is forwarded to the repository.
  */
 export const createCrudRouter = <T extends BaseEntity>(
     getRepository: () => BaseRepository<T>,
     label: string,
+    validate?: Validator,
 ): Router => {
     const router = express.Router();
 
@@ -42,6 +49,14 @@ export const createCrudRouter = <T extends BaseEntity>(
     // POST / — create new
     router.post("/", async (req: Request<unknown, unknown, Partial<T>>, res) => {
         try {
+            if (validate) {
+                const result = validate(req.body, false);
+                if (!result.valid) {
+                    return res.status(400).json({ error: "Validation failed", details: result.details });
+                }
+                req.body = result.sanitized as Partial<T>;
+            }
+
             const repository = getRepository();
             const created = await repository.create(req.body);
 
@@ -71,6 +86,14 @@ export const createCrudRouter = <T extends BaseEntity>(
     // PUT /:id
     router.put("/:id", async (req: Request<{ id: string }, unknown, Partial<T>>, res) => {
         try {
+            if (validate) {
+                const result = validate(req.body, true);
+                if (!result.valid) {
+                    return res.status(400).json({ error: "Validation failed", details: result.details });
+                }
+                req.body = result.sanitized as Partial<T>;
+            }
+
             const repository = getRepository();
             const updated = await repository.update(req.params.id, req.body);
             if (!updated) {
