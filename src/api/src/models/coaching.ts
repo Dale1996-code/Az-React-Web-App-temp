@@ -6,9 +6,11 @@ import { BaseEntity } from "./baseRepository";
  */
 export interface CoachingRecord extends BaseEntity {
     employeeId: string;
-    date: string; // ISO date string (YYYY-MM-DD)
+    storeDate: string;      // ISO date string (YYYY-MM-DD)
+    topic: string;
     issues?: string[];
     goals?: string;
-    followUpDate?: string; // ISO date string
+    followUpDate?: string;  // ISO date string (YYYY-MM-DD)
     acknowledgement?: string;
+    status?: string;
 }

@@ -1,119 +1,162 @@
-# Authoritative source: src/api/openapi.yaml
-# This root copy exists for tooling discovery (e.g. GitHub, API gateways).
-# Keep these two files in sync when updating the spec.
 openapi: 3.0.0
 info:
   description: Dales Operations API — store operations and shift management
-  version: 0.1.0
+  version: 0.2.0
   title: Dales Operations API
   contact:
     email: noreply@example.com
 
 components:
   schemas:
-    Employee:
-      type: object
-      required:
-        - name
-        - role
-      properties:
-        id: { type: string }
-        name: { type: string }
-        role: { type: string }
-        department: { type: string }
-        notes: { type: string }
-        createdDate: { type: string, format: date-time }
-        updatedDate: { type: string, format: date-time }
 
+    # ── Error shape ─────────────────────────────────────────────────────────────
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          example: "Validation failed"
+        details:
+          type: array
+          items: { type: string }
+          example: ["storeDate is required and must be YYYY-MM-DD.", "shiftLabel is required."]
+
+    # ── Enums ────────────────────────────────────────────────────────────────────
     TaskStatus:
       type: string
       enum: [notStarted, inProgress, completed]
 
-    Task:
-      type: object
-      required:
-        - title
-        - status
-      properties:
-        id: { type: string }
-        title: { type: string }
-        description: { type: string }
-        status: { $ref: "#/components/schemas/TaskStatus" }
-        assignedToEmployeeId: { type: string }
-        department: { type: string }
-        dueDate: { type: string, format: date }
-        notes: { type: string }
-        createdDate: { type: string, format: date-time }
-        updatedDate: { type: string, format: date-time }
-
-    ProductivityRecord:
-      type: object
-      required:
-        - employeeId
-        - date
-      properties:
-        id: { type: string }
-        employeeId: { type: string }
-        date: { type: string, format: date }
-        freightStocked: { type: number }
-        breakDurationMinutes: { type: number }
-        zonedAreas: { type: string }
-        overstockNotes: { type: string }
-        shiftNotes: { type: string }
-        createdDate: { type: string, format: date-time }
-        updatedDate: { type: string, format: date-time }
-
-    CoachingRecord:
-      type: object
-      required:
-        - employeeId
-        - date
-      properties:
-        id: { type: string }
-        employeeId: { type: string }
-        date: { type: string, format: date }
-        issues:
-          type: array
-          items: { type: string }
-        goals: { type: string }
-        followUpDate: { type: string, format: date }
-        acknowledgement: { type: string }
-        createdDate: { type: string, format: date-time }
-        updatedDate: { type: string, format: date-time }
+    TaskPriority:
+      type: string
+      enum: [low, medium, high]
 
     IssueStatus:
       type: string
       enum: [open, resolved]
 
+    # ── Employee ─────────────────────────────────────────────────────────────────
+    Employee:
+      type: object
+      required:
+        - firstName
+        - lastName
+        - role
+        - isActive
+      properties:
+        id:           { type: string, readOnly: true }
+        firstName:    { type: string, minLength: 1, maxLength: 100 }
+        lastName:     { type: string, minLength: 1, maxLength: 100 }
+        role:         { type: string, minLength: 1, maxLength: 100 }
+        isActive:     { type: boolean }
+        department:   { type: string, maxLength: 100 }
+        employeeCode: { type: string, maxLength: 50 }
+        notes:        { type: string, maxLength: 500 }
+        createdDate:  { type: string, format: date-time, readOnly: true }
+        updatedDate:  { type: string, format: date-time, readOnly: true }
+
+    # ── Task ─────────────────────────────────────────────────────────────────────
+    Task:
+      type: object
+      required:
+        - title
+        - status
+        - storeDate
+        - department
+      properties:
+        id:                  { type: string, readOnly: true }
+        title:               { type: string, minLength: 1, maxLength: 200 }
+        status:              { $ref: "#/components/schemas/TaskStatus" }
+        storeDate:           { type: string, format: date, example: "2026-04-14" }
+        department:          { type: string, minLength: 1, maxLength: 100 }
+        assignedEmployeeId:  { type: string }
+        description:         { type: string, maxLength: 1000 }
+        priority:            { $ref: "#/components/schemas/TaskPriority" }
+        dueTime:             { type: string, pattern: "^\\d{2}:\\d{2}$", example: "14:30" }
+        notes:               { type: string, maxLength: 1000 }
+        completedAt:         { type: string, format: date-time }
+        createdDate:         { type: string, format: date-time, readOnly: true }
+        updatedDate:         { type: string, format: date-time, readOnly: true }
+
+    # ── ProductivityRecord ───────────────────────────────────────────────────────
+    ProductivityRecord:
+      type: object
+      required:
+        - employeeId
+        - storeDate
+      properties:
+        id:                   { type: string, readOnly: true }
+        employeeId:           { type: string }
+        storeDate:            { type: string, format: date, example: "2026-04-14" }
+        freightStockedUnits:  { type: number, minimum: 0 }
+        breakMinutes:         { type: number, minimum: 0 }
+        zonesCovered:         { type: string }
+        overstockNotes:       { type: string }
+        shiftNotes:           { type: string }
+        createdDate:          { type: string, format: date-time, readOnly: true }
+        updatedDate:          { type: string, format: date-time, readOnly: true }
+
+    # ── CoachingRecord ───────────────────────────────────────────────────────────
+    CoachingRecord:
+      type: object
+      required:
+        - employeeId
+        - storeDate
+        - topic
+      properties:
+        id:              { type: string, readOnly: true }
+        employeeId:      { type: string }
+        storeDate:       { type: string, format: date, example: "2026-04-14" }
+        topic:           { type: string, minLength: 1 }
+        issues:
+          type: array
+          items: { type: string }
+        goals:           { type: string }
+        followUpDate:    { type: string, format: date, example: "2026-04-21" }
+        acknowledgement: { type: string }
+        status:          { type: string }
+        createdDate:     { type: string, format: date-time, readOnly: true }
+        updatedDate:     { type: string, format: date-time, readOnly: true }
+
+    # ── IssueLog ─────────────────────────────────────────────────────────────────
     IssueLog:
       type: object
       required:
-        - type
+        - storeDate
+        - category
         - status
-        - date
+        - department
+        - description
       properties:
-        id: { type: string }
-        type: { type: string }
-        status: { $ref: "#/components/schemas/IssueStatus" }
-        date: { type: string, format: date }
-        notes: { type: string }
-        department: { type: string }
-        createdDate: { type: string, format: date-time }
-        updatedDate: { type: string, format: date-time }
+        id:                    { type: string, readOnly: true }
+        storeDate:             { type: string, format: date, example: "2026-04-14" }
+        category:              { type: string, minLength: 1 }
+        status:                { $ref: "#/components/schemas/IssueStatus" }
+        department:            { type: string, minLength: 1 }
+        description:           { type: string, minLength: 1 }
+        reportedByEmployeeId:  { type: string }
+        resolvedAt:            { type: string, format: date-time }
+        resolutionNotes:       { type: string }
+        createdDate:           { type: string, format: date-time, readOnly: true }
+        updatedDate:           { type: string, format: date-time, readOnly: true }
 
+    # ── DailySummary ─────────────────────────────────────────────────────────────
     DailySummary:
       type: object
       required:
-        - date
+        - storeDate
+        - shiftLabel
       properties:
-        id: { type: string }
-        date: { type: string, format: date }
-        completedWork: { type: string }
-        missedWork: { type: string }
-        followUpItems: { type: string }
-        generalNotes: { type: string }
-        createdDate: { type: string, format: date-time }
-        updatedDate: { type: string, format: date-time }
+        id:                { type: string, readOnly: true }
+        storeDate:         { type: string, format: date, example: "2026-04-14" }
+        shiftLabel:        { type: string, minLength: 1, example: "closing" }
+        completedWork:     { type: string }
+        missedWork:        { type: string }
+        followUpItems:     { type: string }
+        generalNotes:      { type: string }
+        authorEmployeeId:  { type: string }
+        createdDate:       { type: string, format: date-time, readOnly: true }
+        updatedDate:       { type: string, format: date-time, readOnly: true }
 
   parameters:
     id:
@@ -134,6 +177,15 @@ components:
       name: skip
       description: Number of items to skip
       schema: { type: number, default: 0 }
+
+  responses:
+    ValidationError:
+      description: Validation failed — one or more required fields missing or malformed.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ApiError" }
+    NotFound:
+      description: Resource not found.
 
 paths:
   # ---------- Employees ----------
@@ -156,6 +208,7 @@ paths:
       summary: Create employee
       tags: [Employees]
       requestBody:
+        required: true
         content:
           application/json:
             schema: { $ref: "#/components/schemas/Employee" }
@@ -165,6 +218,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Employee" }
+        "400": { $ref: "#/components/responses/ValidationError" }
   /employees/{id}:
     parameters:
       - $ref: "#/components/parameters/id"
@@ -177,11 +231,12 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Employee" }
-        "404": { description: Not found }
+        "404": { $ref: "#/components/responses/NotFound" }
     put:
       summary: Update employee
       tags: [Employees]
       requestBody:
+        required: true
         content:
           application/json:
             schema: { $ref: "#/components/schemas/Employee" }
@@ -191,13 +246,14 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Employee" }
-        "404": { description: Not found }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "404": { $ref: "#/components/responses/NotFound" }
     delete:
       summary: Delete employee
       tags: [Employees]
       responses:
         "204": { description: Deleted }
-        "404": { description: Not found }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   # ---------- Tasks ----------
   /tasks:
@@ -219,6 +275,7 @@ paths:
       summary: Create task
       tags: [Tasks]
       requestBody:
+        required: true
         content:
           application/json:
             schema: { $ref: "#/components/schemas/Task" }
@@ -228,6 +285,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Task" }
+        "400": { $ref: "#/components/responses/ValidationError" }
   /tasks/{id}:
     parameters:
       - $ref: "#/components/parameters/id"
@@ -240,11 +298,12 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Task" }
-        "404": { description: Not found }
+        "404": { $ref: "#/components/responses/NotFound" }
     put:
       summary: Update task
       tags: [Tasks]
       requestBody:
+        required: true
         content:
           application/json:
             schema: { $ref: "#/components/schemas/Task" }
@@ -254,13 +313,14 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Task" }
-        "404": { description: Not found }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "404": { $ref: "#/components/responses/NotFound" }
     delete:
       summary: Delete task
       tags: [Tasks]
       responses:
         "204": { description: Deleted }
-        "404": { description: Not found }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   # ---------- Productivity ----------
   /productivity:
@@ -282,6 +342,7 @@ paths:
       summary: Create productivity record
       tags: [Productivity]
       requestBody:
+        required: true
         content:
           application/json:
             schema: { $ref: "#/components/schemas/ProductivityRecord" }
@@ -291,6 +352,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ProductivityRecord" }
+        "400": { $ref: "#/components/responses/ValidationError" }
   /productivity/{id}:
     parameters:
       - $ref: "#/components/parameters/id"
@@ -303,11 +365,12 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ProductivityRecord" }
-        "404": { description: Not found }
+        "404": { $ref: "#/components/responses/NotFound" }
     put:
       summary: Update productivity record
       tags: [Productivity]
       requestBody:
+        required: true
         content:
           application/json:
             schema: { $ref: "#/components/schemas/ProductivityRecord" }
@@ -317,13 +380,14 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ProductivityRecord" }
-        "404": { description: Not found }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "404": { $ref: "#/components/responses/NotFound" }
     delete:
       summary: Delete productivity record
       tags: [Productivity]
       responses:
         "204": { description: Deleted }
-        "404": { description: Not found }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   # ---------- Coaching ----------
   /coaching:
@@ -345,6 +409,7 @@ paths:
       summary: Create coaching record
       tags: [Coaching]
       requestBody:
+        required: true
         content:
           application/json:
             schema: { $ref: "#/components/schemas/CoachingRecord" }
@@ -354,6 +419,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CoachingRecord" }
+        "400": { $ref: "#/components/responses/ValidationError" }
   /coaching/{id}:
     parameters:
       - $ref: "#/components/parameters/id"
@@ -366,11 +432,12 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CoachingRecord" }
-        "404": { description: Not found }
+        "404": { $ref: "#/components/responses/NotFound" }
     put:
       summary: Update coaching record
       tags: [Coaching]
       requestBody:
+        required: true
         content:
           application/json:
             schema: { $ref: "#/components/schemas/CoachingRecord" }
@@ -380,13 +447,14 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CoachingRecord" }
-        "404": { description: Not found }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "404": { $ref: "#/components/responses/NotFound" }
     delete:
       summary: Delete coaching record
       tags: [Coaching]
       responses:
         "204": { description: Deleted }
-        "404": { description: Not found }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   # ---------- Issues ----------
   /issues:
@@ -408,6 +476,7 @@ paths:
       summary: Create issue log entry
       tags: [Issues]
       requestBody:
+        required: true
         content:
           application/json:
             schema: { $ref: "#/components/schemas/IssueLog" }
@@ -417,6 +486,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/IssueLog" }
+        "400": { $ref: "#/components/responses/ValidationError" }
   /issues/{id}:
     parameters:
       - $ref: "#/components/parameters/id"
@@ -429,11 +499,12 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/IssueLog" }
-        "404": { description: Not found }
+        "404": { $ref: "#/components/responses/NotFound" }
     put:
       summary: Update issue
       tags: [Issues]
       requestBody:
+        required: true
         content:
           application/json:
             schema: { $ref: "#/components/schemas/IssueLog" }
@@ -443,13 +514,14 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/IssueLog" }
-        "404": { description: Not found }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "404": { $ref: "#/components/responses/NotFound" }
     delete:
       summary: Delete issue
       tags: [Issues]
       responses:
         "204": { description: Deleted }
-        "404": { description: Not found }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   # ---------- Summaries ----------
   /summaries:
@@ -471,6 +543,7 @@ paths:
       summary: Create daily summary
       tags: [Summaries]
       requestBody:
+        required: true
         content:
           application/json:
             schema: { $ref: "#/components/schemas/DailySummary" }
@@ -480,6 +553,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/DailySummary" }
+        "400": { $ref: "#/components/responses/ValidationError" }
   /summaries/{id}:
     parameters:
       - $ref: "#/components/parameters/id"
@@ -492,11 +566,12 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/DailySummary" }
-        "404": { description: Not found }
+        "404": { $ref: "#/components/responses/NotFound" }
     put:
       summary: Update summary
       tags: [Summaries]
       requestBody:
+        required: true
         content:
           application/json:
             schema: { $ref: "#/components/schemas/DailySummary" }
@@ -506,10 +581,11 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/DailySummary" }
-        "404": { description: Not found }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "404": { $ref: "#/components/responses/NotFound" }
     delete:
       summary: Delete summary
       tags: [Summaries]
       responses:
         "204": { description: Deleted }
-        "404": { description: Not found }
+        "404": { $ref: "#/components/responses/NotFound" }

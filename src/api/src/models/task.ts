@@ -1,6 +1,7 @@
 import { BaseEntity } from "./baseRepository";
 
 export type TaskStatus = "notStarted" | "inProgress" | "completed";
+export type TaskPriority = "low" | "medium" | "high";
 
 /**
  * A daily task assigned during a shift.
@@ -8,9 +9,12 @@ export type TaskStatus = "notStarted" | "inProgress" | "completed";
 export interface Task extends BaseEntity {
     title: string;
     status: TaskStatus;
+    storeDate: string;    // ISO date string (YYYY-MM-DD)
+    department: string;
+    assignedEmployeeId?: string;
     description?: string;
-    assignedToEmployeeId?: string;
-    department?: string;
-    dueDate?: string; // ISO date string (YYYY-MM-DD)
+    priority?: TaskPriority;
+    dueTime?: string;     // HH:MM (24-hour)
     notes?: string;
+    completedAt?: string; // ISO datetime string
 }

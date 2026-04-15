@@ -5,10 +5,10 @@ import { BaseEntity } from "./baseRepository";
  */
 export interface ProductivityRecord extends BaseEntity {
     employeeId: string;
-    date: string; // ISO date string (YYYY-MM-DD)
-    freightStocked?: number;
-    breakDurationMinutes?: number;
-    zonedAreas?: string;
+    storeDate: string;           // ISO date string (YYYY-MM-DD)
+    freightStockedUnits?: number;
+    breakMinutes?: number;
+    zonesCovered?: string;
     overstockNotes?: string;
     shiftNotes?: string;
 }
