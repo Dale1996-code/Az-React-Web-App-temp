@@ -4,6 +4,13 @@ import { Validator } from "../validation";
 import { PagingQueryParams } from "./common";
 
 /**
+ * Optional in-memory filter applied after findAll() on GET /.
+ * Receives the full list and the raw query string params; returns the filtered subset.
+ * Filtering happens before pagination so ?top/skip counts apply to the filtered set.
+ */
+export type QueryFilter<T> = (items: T[], query: Record<string, string>) => T[];
+
+/**
  * Creates a standard REST CRUD router for a single Dales Operations collection.
  *
  * Routes:
@@ -20,21 +27,29 @@ import { PagingQueryParams } from "./common";
  * POST (isUpdate=false) and PUT (isUpdate=true).  When validation fails the
  * router returns 400 { error, details }.  When it passes, the sanitized
  * (allowlisted + trimmed) body is forwarded to the repository.
+ *
+ * `queryFilter` is an optional collection-specific filter applied to the full
+ * list on GET / before pagination.
  */
 export const createCrudRouter = <T extends BaseEntity>(
     getRepository: () => BaseRepository<T>,
     label: string,
     validate?: Validator,
+    queryFilter?: QueryFilter<T>,
 ): Router => {
     const router = express.Router();
 
-    // GET / — list all
+    // GET / — list all (with optional filtering and pagination)
     router.get(
         "/",
         async (req: Request<unknown, unknown, unknown, PagingQueryParams>, res) => {
             try {
                 const repository = getRepository();
-                const items = await repository.findAll();
+                let items = await repository.findAll();
+
+                if (queryFilter) {
+                    items = queryFilter(items, req.query as Record<string, string>);
+                }
 
                 const skip = req.query.skip ? parseInt(req.query.skip) : 0;
                 const top = req.query.top ? parseInt(req.query.top) : 100;

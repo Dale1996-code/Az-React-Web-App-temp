@@ -99,6 +99,33 @@ describe("Dales Operations API", () => {
             expect(res.status).toBe(400);
             expect(res.body.details).toEqual(expect.arrayContaining([expect.stringContaining("isActive")]));
         });
+
+        it("GET /employees?active=false returns only inactive employees", async () => {
+            await post("/employees", validEmployee);
+            await post("/employees", { firstName: "Bob", lastName: "Jones", role: "Associate", isActive: false });
+            const res = await get("/employees?active=false");
+            expect(res.status).toBe(200);
+            expect(res.body.length).toBe(1);
+            expect(res.body[0].firstName).toBe("Bob");
+        });
+
+        it("GET /employees?department= filters by department", async () => {
+            await post("/employees", { ...validEmployee, department: "Grocery" });
+            await post("/employees", { firstName: "Bob", lastName: "Jones", role: "Associate", isActive: true, department: "Produce" });
+            const res = await get("/employees?department=Grocery");
+            expect(res.status).toBe(200);
+            expect(res.body.length).toBe(1);
+            expect(res.body[0].department).toBe("Grocery");
+        });
+
+        it("GET /employees?search= filters by name", async () => {
+            await post("/employees", validEmployee);
+            await post("/employees", { firstName: "Bob", lastName: "Jones", role: "Associate", isActive: true });
+            const res = await get("/employees?search=alice");
+            expect(res.status).toBe(200);
+            expect(res.body.length).toBe(1);
+            expect(res.body[0].firstName).toBe("Alice");
+        });
     });
 
     // ---------------------------------------------------------------------------
