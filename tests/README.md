@@ -1,10 +1,10 @@
-# ToDo Application Tests
+# Dales Operations Tests
 
-The included [Playwright](https://playwright.dev/) smoke test will hit the ToDo app web endpoint, create, and delete an item.
+The included [Playwright](https://playwright.dev/) smoke tests hit the Dales Operations web endpoint to verify the app is reachable and responding.
 
 ## Run Tests
 
-The endpoint it hits will be discovered in this order:
+The endpoint is discovered in this order:
 
 1. Value of `REACT_APP_WEB_BASE_URL` environment variable
 1. Value of `REACT_APP_WEB_BASE_URL` found in default .azure environment
@@ -20,7 +20,7 @@ You can use the `--headed` flag to open a browser when running the tests.
 
 ## Debug Tests
 
-Add the `--debug` flag to run with debugging enabled. You can find out more info here: https://playwright.dev/docs/next/test-cli#reference
+Add the `--debug` flag to run with debugging enabled. See: https://playwright.dev/docs/next/test-cli#reference
 
 ```bash
 npx playwright test --debug

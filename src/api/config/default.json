@@ -1,7 +1,7 @@
 {
     "database": {
         "endpoint": "",
-        "databaseName": "Todo"
+        "databaseName": "DalesOperations"
     },
     "observability": {
         "connectionString": "",

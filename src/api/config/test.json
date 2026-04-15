@@ -1,7 +1,7 @@
 {
     "database": {
         "endpoint": "https://mock-cosmos-endpoint.documents.azure.com:443/",
-        "databaseName": "MockTodo"
+        "databaseName": "DalesOperationsTest"
     },
     "observability": {
         "connectionString": "InstrumentationKey=00000000-0000-0000-0000-000000000000",
