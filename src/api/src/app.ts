@@ -3,6 +3,7 @@ import swaggerUI from "swagger-ui-express";
 import cors from "cors";
 import yaml from "yamljs";
 import { getConfig } from "./config";
+import dashboard from "./routes/dashboard";
 import employees from "./routes/employees";
 import tasks from "./routes/tasks";
 import productivity from "./routes/productivity";
@@ -59,6 +60,7 @@ export const createApp = async (): Promise<Express> => {
     }));
 
     // Dales Operations API routes — one router per domain collection.
+    app.use("/dashboard", dashboard);
     app.use("/employees", employees);
     app.use("/tasks", tasks);
     app.use("/productivity", productivity);

@@ -188,6 +188,51 @@ components:
       description: Resource not found.
 
 paths:
+  # ---------- Dashboard ----------
+  /dashboard:
+    get:
+      summary: Get shift-day summary
+      description: >
+        Returns aggregated counts for a single shift day.
+        All values are counts only — no lists or trend data.
+      tags: [Dashboard]
+      parameters:
+        - name: date
+          in: query
+          description: Target date (YYYY-MM-DD). Defaults to today.
+          schema: { type: string, format: date, example: "2026-04-15" }
+      responses:
+        "200":
+          description: Dashboard summary counts
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [date, taskCounts, openIssuesCount, coachingFollowUpsDueCount, activeEmployeesCount]
+                properties:
+                  date:
+                    type: string
+                    format: date
+                    example: "2026-04-15"
+                  taskCounts:
+                    type: object
+                    required: [notStarted, inProgress, completed]
+                    properties:
+                      notStarted: { type: integer, minimum: 0 }
+                      inProgress: { type: integer, minimum: 0 }
+                      completed:  { type: integer, minimum: 0 }
+                  openIssuesCount:
+                    type: integer
+                    minimum: 0
+                  coachingFollowUpsDueCount:
+                    type: integer
+                    minimum: 0
+                  activeEmployeesCount:
+                    type: integer
+                    minimum: 0
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
   # ---------- Employees ----------
   /employees:
     get:
