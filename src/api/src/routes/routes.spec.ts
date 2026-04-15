@@ -373,6 +373,73 @@ describe("Dales Operations API", () => {
     });
 
     // ---------------------------------------------------------------------------
+    // Dashboard
+    // ---------------------------------------------------------------------------
+    describe("Dashboard", () => {
+        const DATE = "2026-04-15";
+
+        it("GET /dashboard returns zeros when no data exists", async () => {
+            const res = await get(`/dashboard?date=${DATE}`);
+            expect(res.status).toBe(200);
+            expect(res.body.date).toBe(DATE);
+            expect(res.body.taskCounts).toEqual({ notStarted: 0, inProgress: 0, completed: 0 });
+            expect(res.body.openIssuesCount).toBe(0);
+            expect(res.body.coachingFollowUpsDueCount).toBe(0);
+            expect(res.body.activeEmployeesCount).toBe(0);
+        });
+
+        it("GET /dashboard counts active employees", async () => {
+            await post("/employees", { firstName: "A", lastName: "B", role: "Lead", isActive: true });
+            await post("/employees", { firstName: "C", lastName: "D", role: "Associate", isActive: true });
+            await post("/employees", { firstName: "E", lastName: "F", role: "Associate", isActive: false });
+            const res = await get(`/dashboard?date=${DATE}`);
+            expect(res.status).toBe(200);
+            expect(res.body.activeEmployeesCount).toBe(2);
+        });
+
+        it("GET /dashboard counts tasks by status for the requested date", async () => {
+            await post("/tasks", { title: "T1", status: "notStarted", storeDate: DATE, department: "Grocery" });
+            await post("/tasks", { title: "T2", status: "inProgress",  storeDate: DATE, department: "Grocery" });
+            await post("/tasks", { title: "T3", status: "completed",   storeDate: DATE, department: "Grocery" });
+            // Task on a different date — should not appear
+            await post("/tasks", { title: "T4", status: "notStarted",  storeDate: "2026-04-14", department: "Grocery" });
+            const res = await get(`/dashboard?date=${DATE}`);
+            expect(res.status).toBe(200);
+            expect(res.body.taskCounts).toEqual({ notStarted: 1, inProgress: 1, completed: 1 });
+        });
+
+        it("GET /dashboard counts open issues", async () => {
+            await post("/issues", { storeDate: DATE, category: "Safety", status: "open",     department: "Produce", description: "Spill" });
+            await post("/issues", { storeDate: DATE, category: "Equipment", status: "resolved", department: "Produce", description: "Fixed" });
+            const res = await get(`/dashboard?date=${DATE}`);
+            expect(res.status).toBe(200);
+            expect(res.body.openIssuesCount).toBe(1);
+        });
+
+        it("GET /dashboard counts coaching follow-ups due on or before date", async () => {
+            await post("/employees", { firstName: "X", lastName: "Y", role: "Lead", isActive: true });
+            const emp = (await get("/employees")).body[0];
+            // Due today — counts
+            await post("/coaching", { employeeId: emp.id, storeDate: "2026-04-10", topic: "Attendance", followUpDate: DATE });
+            // Due yesterday — also counts
+            await post("/coaching", { employeeId: emp.id, storeDate: "2026-04-09", topic: "Safety", followUpDate: "2026-04-14" });
+            // Due tomorrow — should NOT count
+            await post("/coaching", { employeeId: emp.id, storeDate: "2026-04-10", topic: "Conduct", followUpDate: "2026-04-16" });
+            // No follow-up date — should NOT count
+            await post("/coaching", { employeeId: emp.id, storeDate: "2026-04-10", topic: "Other" });
+            const res = await get(`/dashboard?date=${DATE}`);
+            expect(res.status).toBe(200);
+            expect(res.body.coachingFollowUpsDueCount).toBe(2);
+        });
+
+        it("GET /dashboard defaults to today when no date param given", async () => {
+            const res = await get("/dashboard");
+            expect(res.status).toBe(200);
+            expect(res.body.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        });
+    });
+
+    // ---------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------
     const get  = (path: string) => request(app).get(path);
