@@ -196,6 +196,44 @@ describe("Dales Operations API", () => {
             expect(res.status).toBe(400);
             expect(res.body.details).toEqual(expect.arrayContaining([expect.stringContaining("department")]));
         });
+
+        it("GET /tasks?status= filters by status", async () => {
+            await post("/tasks", validTask);
+            await post("/tasks", { ...validTask, title: "Task B", status: "inProgress" });
+            await post("/tasks", { ...validTask, title: "Task C", status: "completed" });
+            const res = await get("/tasks?status=notStarted");
+            expect(res.status).toBe(200);
+            expect(res.body.length).toBe(1);
+            expect(res.body[0].title).toBe("Stock cereal aisle");
+        });
+
+        it("GET /tasks?date= filters by storeDate", async () => {
+            await post("/tasks", validTask); // storeDate: "2026-04-14"
+            await post("/tasks", { ...validTask, title: "Task B", storeDate: "2026-04-15" });
+            const res = await get("/tasks?date=2026-04-14");
+            expect(res.status).toBe(200);
+            expect(res.body.length).toBe(1);
+            expect(res.body[0].storeDate).toBe("2026-04-14");
+        });
+
+        it("GET /tasks?department= filters by department case-insensitively", async () => {
+            await post("/tasks", validTask); // department: "Grocery"
+            await post("/tasks", { ...validTask, title: "Task B", department: "Produce" });
+            const res = await get("/tasks?department=grocery");
+            expect(res.status).toBe(200);
+            expect(res.body.length).toBe(1);
+            expect(res.body[0].department).toBe("Grocery");
+        });
+
+        it("GET /tasks with combined filters returns correct subset", async () => {
+            await post("/tasks", validTask); // Grocery / notStarted / 2026-04-14
+            await post("/tasks", { ...validTask, title: "Task B", status: "inProgress" }); // Grocery / inProgress / 2026-04-14
+            await post("/tasks", { ...validTask, title: "Task C", department: "Produce" }); // Produce / notStarted / 2026-04-14
+            const res = await get("/tasks?status=notStarted&department=Grocery");
+            expect(res.status).toBe(200);
+            expect(res.body.length).toBe(1);
+            expect(res.body[0].title).toBe("Stock cereal aisle");
+        });
     });
 
     // ---------------------------------------------------------------------------
