@@ -10,7 +10,7 @@
     "build": "tsc -b .",
     "prestart": "npm run build",
     "start": "node .",
-    "test": "jest --coverage"
+    "test": "jest --coverage --forceExit"
   },
   "author": "",
   "license": "MIT",

@@ -20,17 +20,17 @@ Run these from the `src/web/` directory:
 
 Installs dependencies.
 
-### `npm start`
+### `npm run dev`
 
-Starts the development server.  
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Starts the Vite development server.  
+Open [http://localhost:5173](http://localhost:5173) in your browser.
 
-The page reloads on edits and shows lint errors in the console.
+The page hot-reloads on edits and shows lint errors in the console.
 
 ### `npm run build`
 
-Builds for production into the `dist/` folder.
+Type-checks with `tsc` and builds for production into the `dist/` folder.
 
-### `npm test`
+### `npm run preview`
 
-Runs the unit test suite.
+Serves the production build locally for verification.

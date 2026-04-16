@@ -478,6 +478,18 @@ describe("Dales Operations API", () => {
     });
 
     // ---------------------------------------------------------------------------
+    // Health
+    // ---------------------------------------------------------------------------
+    describe("Health", () => {
+        it("GET /health returns ok status", async () => {
+            const res = await get("/health");
+            expect(res.status).toBe(200);
+            expect(res.body.status).toBe("ok");
+            expect(res.body.timestamp).toBeDefined();
+        });
+    });
+
+    // ---------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------
     const get  = (path: string) => request(app).get(path);
