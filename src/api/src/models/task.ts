@@ -11,7 +11,7 @@ export interface Task extends BaseEntity {
     status: TaskStatus;
     storeDate: string;    // ISO date string (YYYY-MM-DD)
     department: string;
-    assignedEmployeeId?: string;
+    assignedEmployeeId?: string | null; // null explicitly clears an existing assignment
     description?: string;
     priority?: TaskPriority;
     dueTime?: string;     // HH:MM (24-hour)

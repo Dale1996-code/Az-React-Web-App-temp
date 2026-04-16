@@ -372,15 +372,10 @@ const TasksPage: FC = (): ReactElement => {
         [filterDate, filterStatus, filterDept],
     );
 
-    // Initial load — today's tasks
-    useEffect(() => {
-        load({ date: todayISO() });
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-    // Reload when status filter changes (immediate)
-    useEffect(() => {
-        load(currentQuery());
-    }, [filterStatus]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Runs on mount (initial load) and whenever the status dropdown changes.
+    // Date and department filters trigger load() directly in their own handlers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    useEffect(() => { load(currentQuery()); }, [filterStatus]);
 
     // Load active employees for the assignment dropdown
     const loadEmployees = useCallback(async () => {
@@ -494,17 +489,20 @@ const TasksPage: FC = (): ReactElement => {
         setSaving(true);
         setSaveError(null);
 
+        const isCompleted = form.status === 'completed';
         const payload: TaskFormData = {
-            title:      form.title.trim(),
-            status:     form.status as TaskStatus,
-            storeDate:  form.storeDate.trim(),
-            department: form.department.trim(),
-            ...(form.assignedEmployeeId               && { assignedEmployeeId: form.assignedEmployeeId }),
-            ...(form.description.trim()               && { description:        form.description.trim() }),
-            ...(form.priority                         && { priority:           form.priority as TaskPriority }),
-            ...(form.dueTime.trim()                   && { dueTime:            form.dueTime.trim() }),
-            ...(form.notes.trim()                     && { notes:              form.notes.trim() }),
-            ...(form.completedAt.trim()               && { completedAt:        form.completedAt.trim() }),
+            title:               form.title.trim(),
+            status:              form.status as TaskStatus,
+            storeDate:           form.storeDate.trim(),
+            department:          form.department.trim(),
+            // Always send assignedEmployeeId so that clearing (null) is persisted on update
+            assignedEmployeeId:  form.assignedEmployeeId || null,
+            ...(form.description.trim()               && { description: form.description.trim() }),
+            ...(form.priority                         && { priority:    form.priority as TaskPriority }),
+            ...(form.dueTime.trim()                   && { dueTime:     form.dueTime.trim() }),
+            ...(form.notes.trim()                     && { notes:       form.notes.trim() }),
+            // Only send completedAt when the task is actually completed
+            ...(isCompleted && form.completedAt.trim() && { completedAt: form.completedAt.trim() }),
         };
 
         try {

@@ -11,7 +11,7 @@ export interface Task {
     status: TaskStatus;
     storeDate: string;       // YYYY-MM-DD
     department: string;
-    assignedEmployeeId?: string;
+    assignedEmployeeId?: string | null; // null explicitly clears an existing assignment
     description?: string;
     priority?: TaskPriority;
     dueTime?: string;        // HH:MM (24-hour)
@@ -27,7 +27,7 @@ export type TaskFormData = {
     status: TaskStatus;
     storeDate: string;
     department: string;
-    assignedEmployeeId?: string;
+    assignedEmployeeId?: string | null;
     description?: string;
     priority?: TaskPriority;
     dueTime?: string;

@@ -140,7 +140,13 @@ export function validateTask(body: unknown, isUpdate: boolean): ValidationResult
     if ("status" in b)             sanitized.status             = b.status;
     if ("storeDate" in b)          sanitized.storeDate          = b.storeDate;
     if ("department" in b)         sanitized.department         = trimStr(b.department);
-    if ("assignedEmployeeId" in b) sanitized.assignedEmployeeId = b.assignedEmployeeId !== undefined ? trimStr(b.assignedEmployeeId) : undefined;
+    if ("assignedEmployeeId" in b) {
+        // null or absent → clear the assignment; truthy string → set it
+        const aid = b.assignedEmployeeId;
+        sanitized.assignedEmployeeId = (aid === null || aid === undefined)
+            ? null
+            : trimStr(aid) || null;
+    }
     if ("description" in b)        sanitized.description        = b.description        !== undefined ? trimStr(b.description)        : undefined;
     if ("priority" in b)           sanitized.priority           = b.priority;
     if ("dueTime" in b)            sanitized.dueTime            = b.dueTime;
