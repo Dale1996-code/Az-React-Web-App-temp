@@ -9,14 +9,9 @@ import dotenv from "dotenv";
  */
 const config: PlaywrightTestConfig = {
   testDir: ".",
-  /* Maximum time one test can run for. Using 2 hours per test */
-  timeout: 2 * 60 * 60 * 1000,
+  timeout: 30 * 1000,
   expect: {
-    /**
-     * Maximum time expect() should wait for the condition to be met.
-     * For example in `await expect(locator).toHaveText();`
-     */
-    timeout: 60 * 60 * 1000,
+    timeout: 10 * 1000,
   },
   /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
@@ -74,7 +69,7 @@ function getBaseURL() {
     }
   }
 
-  let baseURL = process.env.REACT_APP_WEB_BASE_URL || "http://localhost:3000";
+  let baseURL = process.env.REACT_APP_WEB_BASE_URL || "http://localhost:5173";
   console.log("baseUrl: " + baseURL);
   return baseURL;
 }

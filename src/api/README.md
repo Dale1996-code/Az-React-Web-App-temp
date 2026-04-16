@@ -1,31 +1,41 @@
-# Node with Typescript Express REST API
+# Dales Operations — API
 
-## Setup
+Express + TypeScript REST API backed by Azure Cosmos DB (SQL API with managed identity).
 
-### Prerequisites
+## Prerequisites
 
-- Node (18.17.1)
-- NPM (9.8.1)
+- Node 18+
+- npm
 
-### Local Environment
+## Local Environment
 
-Create a `.env` with the following configuration:
+Create a `.env` in `src/api/` with the following:
 
-- `AZURE_COSMOS_CONNECTION_STRING` - Cosmos DB connection string (Mongo DB also supported)
-- `AZURE_COSMOS_DATABASE_NAME` - Cosmos DB database name (Will automatically be created if it doesn't exist) (default: DalesOperations)
-- `APPLICATIONINSIGHTS_CONNECTION_STRING` - Azure Application Insights connection string
-- `APPLICATIONINSIGHTS_ROLE_NAME` - Azure Application Insights Role name (default: API)
+- `AZURE_COSMOS_ENDPOINT` — Cosmos DB account endpoint (e.g. `https://your-account.documents.azure.com:443/`)
+- `AZURE_COSMOS_DATABASE_NAME` — Database name (default: `DalesOperations`)
+- `AZURE_KEY_VAULT_ENDPOINT` — Key Vault URI (optional; secrets are overlaid on env vars at startup)
+- `APPLICATIONINSIGHTS_CONNECTION_STRING` — Application Insights connection string (optional for local dev)
+- `API_ALLOW_ORIGINS` — Comma-separated allowed CORS origins (not needed when `NODE_ENV=development`)
 
-### Install Dependencies
+## Commands
 
-Run `npm ci` to install local dependencies
+| Command | Purpose |
+|---|---|
+| `npm ci` | Install dependencies |
+| `npm run build` | Lint + compile TypeScript into `./dist` |
+| `npm start` | Build and start the server (port 3100) |
+| `npm test` | Run integration tests (in-memory mock, no DB needed) |
 
-### Build & Compile
+## Endpoints
 
-Run `npm run build` to build & compile the Typescript code into the `./dist` folder
-
-### Run application
-
-Run `npm start` to start the local development server
-
-Launch browser @ `http://localhost:3100`. The default page hosts the Open API UI where you can try out the API
+| Path | Description |
+|---|---|
+| `GET /health` | Health-check (returns `{ status: "ok" }`) |
+| `/employees` | Employee CRUD |
+| `/tasks` | Task CRUD |
+| `/productivity` | Productivity record CRUD |
+| `/coaching` | Coaching record CRUD |
+| `/issues` | Issue log CRUD |
+| `/summaries` | Daily summary CRUD |
+| `/dashboard?date=YYYY-MM-DD` | Aggregated dashboard data |
+| `/` | Swagger UI (OpenAPI spec) |

@@ -1,6 +1,6 @@
 # Dales Operations
 
-A React web app with a Node.js API and Azure Cosmos DB (MongoDB API) deployed on Azure App Service. Built with the Azure Developer CLI (`azd`) for provisioning and deployment.
+A React web app with a Node.js API and Azure Cosmos DB (SQL API) deployed on Azure App Service. Built with the Azure Developer CLI (`azd`) for provisioning and deployment.
 
 ## Application Overview
 
@@ -19,7 +19,7 @@ Dales Operations is a store operations management tool covering:
 |---|---|
 | Web frontend | Azure App Service |
 | Node.js API | Azure App Service |
-| Data store | Azure Cosmos DB (MongoDB API) |
+| Data store | Azure Cosmos DB (SQL API) |
 | Secrets | Azure Key Vault |
 | Observability | Azure Monitor / Application Insights |
 
@@ -52,9 +52,24 @@ azd up
 
 ## Local Development
 
-See service-level READMEs:
+```bash
+# Quick start (both API + frontend)
+./start-dev.sh
 
-- [`src/api/README.md`](src/api/README.md) — Node.js API setup
+# Or start each service individually:
+cd src/api && npm ci && NODE_ENV=development npm start   # http://localhost:3100
+cd src/web && npm ci && npm run dev                       # http://localhost:5173
+```
+
+Run API integration tests (no database required):
+
+```bash
+cd src/api && npm test
+```
+
+See service-level READMEs for more detail:
+
+- [`src/api/README.md`](src/api/README.md) — API setup and endpoints
 - [`src/web/README.md`](src/web/README.md) — React frontend setup
 - [`tests/README.md`](tests/README.md) — Playwright smoke tests
 
@@ -64,4 +79,4 @@ The OpenAPI spec lives at [`src/api/openapi.yaml`](src/api/openapi.yaml). The ro
 
 ## Security
 
-A [managed identity](https://docs.microsoft.com/azure/active-directory/managed-identities-azure-resources/overview) is created for the app and used to authenticate with Azure services. The Cosmos DB connection string is stored in [Azure Key Vault](https://docs.microsoft.com/azure/key-vault/general/overview) and injected at runtime.
+A [managed identity](https://docs.microsoft.com/azure/active-directory/managed-identities-azure-resources/overview) is created for the API and used to authenticate with Cosmos DB (RBAC) and Key Vault. No connection strings are used at runtime — the API authenticates via `DefaultAzureCredential`.

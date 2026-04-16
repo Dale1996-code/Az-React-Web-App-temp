@@ -68,6 +68,11 @@ export const createApp = async (): Promise<Express> => {
     app.use("/issues", issues);
     app.use("/summaries", summaries);
 
+    // Health-check endpoint for deployment probes and smoke tests
+    app.get("/health", (_req, res) => {
+        res.json({ status: "ok", timestamp: new Date().toISOString() });
+    });
+
     // Swagger UI for the OpenAPI spec
     const swaggerDocument = yaml.load("./openapi.yaml");
     app.use("/", swaggerUI.serve, swaggerUI.setup(swaggerDocument));

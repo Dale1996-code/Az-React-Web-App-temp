@@ -36,6 +36,20 @@ jobs:
         with:
           node-version: 18
 
+      - name: Install API dependencies and run tests
+        run: |
+          cd src/api
+          npm ci
+          npm test
+        env:
+          NODE_ENV: test
+
+      - name: Build frontend
+        run: |
+          cd src/web
+          npm ci
+          npm run build
+
       - name: Log in with Azure (Federated Credentials)
         if: ${{ env.AZURE_CLIENT_ID != '' }}
         run: |

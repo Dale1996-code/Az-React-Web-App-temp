@@ -1,26 +1,33 @@
-# Dales Operations Tests
+# Dales Operations — Smoke Tests
 
-The included [Playwright](https://playwright.dev/) smoke tests hit the Dales Operations web endpoint to verify the app is reachable and responding.
+[Playwright](https://playwright.dev/) smoke tests that verify the web frontend routes render correctly.
+
+## What's Tested
+
+- App shell loads with all 7 navigation links
+- Each MVP route renders its heading and shows a loading/empty/list state:
+  Dashboard, Employees, Tasks, Productivity, Coaching, Issues, Daily Summary
+- Unknown routes redirect to the dashboard
+- Navigation between all routes via sidebar links
 
 ## Run Tests
 
-The endpoint is discovered in this order:
+The base URL is discovered in this order:
 
-1. Value of `REACT_APP_WEB_BASE_URL` environment variable
-1. Value of `REACT_APP_WEB_BASE_URL` found in default .azure environment
-1. Defaults to `http://localhost:3000`
+1. `REACT_APP_WEB_BASE_URL` environment variable
+2. `.azure/{env}/.env` from the default azd environment
+3. Defaults to `http://localhost:5173` (Vite dev server)
 
-To run the tests:
+```bash
+cd tests
+npm ci
+npx playwright install --with-deps chromium
+npx playwright test
+```
 
-1. CD to /tests
-1. Run `npm i && npx playwright install`
-1. Run `npx playwright test`
-
-You can use the `--headed` flag to open a browser when running the tests.
+Use `--headed` to watch the browser, or `--debug` for step-through debugging.
 
 ## Debug Tests
-
-Add the `--debug` flag to run with debugging enabled. See: https://playwright.dev/docs/next/test-cli#reference
 
 ```bash
 npx playwright test --debug
