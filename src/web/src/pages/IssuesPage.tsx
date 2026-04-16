@@ -182,16 +182,20 @@ const IssueRow: FC<IssueRowProps> = ({
                 <Text
                     variant="small"
                     style={{
-                        display: 'block',
+                        display: 'inline-block',
+                        padding: '2px 10px',
+                        borderRadius: 12,
+                        background: statusColor + '22',
                         color: statusColor,
                         fontWeight: 600,
                         textTransform: 'capitalize',
+                        whiteSpace: 'nowrap',
                     }}
                 >
                     {issue.status}
                 </Text>
                 {issue.status === 'resolved' && issue.resolvedAt && (
-                    <Text variant="small" style={{ color: '#605e5c' }}>
+                    <Text variant="small" style={{ color: '#605e5c', display: 'block', marginTop: 4 }}>
                         {issue.resolvedAt.split('T')[0]}
                     </Text>
                 )}
@@ -546,7 +550,7 @@ const IssuesPage: FC = (): ReactElement => {
     // ── Render ─────────────────────────────────────────────────────────────────
 
     return (
-        <Stack tokens={stackPadding} style={{ maxWidth: 1040, margin: '0 auto', width: '100%' }}>
+        <Stack tokens={stackPadding} style={{ maxWidth: 960, margin: '0 auto', width: '100%' }}>
             {/* Page header */}
             <Stack.Item tokens={stackItemPadding}>
                 <Stack
@@ -574,14 +578,13 @@ const IssuesPage: FC = (): ReactElement => {
 
             {/* Filters */}
             <Stack.Item tokens={stackItemPadding}>
-                <Stack horizontal wrap tokens={{ childrenGap: 16 }} verticalAlign="end">
+                <Stack horizontal wrap tokens={{ childrenGap: 12 }} verticalAlign="end">
                     <TextField
                         label="Date"
                         value={filterDate}
                         onChange={(_, v) => setFilterDate(v ?? '')}
                         placeholder="YYYY-MM-DD"
                         styles={{ root: { width: 150 } }}
-                        description="Leave blank for all dates"
                     />
                     <Dropdown
                         label="Status"
@@ -603,6 +606,11 @@ const IssuesPage: FC = (): ReactElement => {
                         options={categoryFilterOptions}
                         onChange={(_, opt) => setFilterCategory((opt?.key as string) ?? '')}
                         styles={{ root: { minWidth: 200 } }}
+                    />
+                    <DefaultButton
+                        text="Clear"
+                        iconProps={{ iconName: 'ClearFilter' }}
+                        onClick={() => { setFilterDate(''); setFilterStatus('open'); setFilterDept(''); setFilterCategory(''); }}
                     />
                 </Stack>
             </Stack.Item>

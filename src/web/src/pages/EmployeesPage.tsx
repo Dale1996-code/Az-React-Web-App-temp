@@ -365,7 +365,7 @@ const EmployeesPage: FC = (): ReactElement => {
     // ── Render ─────────────────────────────────────────────────────────────────
 
     return (
-        <Stack tokens={stackPadding} style={{ maxWidth: 900, margin: '0 auto', width: '100%' }}>
+        <Stack tokens={stackPadding} style={{ maxWidth: 960, margin: '0 auto', width: '100%' }}>
             {/* Page header */}
             <Stack.Item tokens={stackItemPadding}>
                 <Stack horizontal horizontalAlign="space-between" verticalAlign="center" wrap tokens={{ childrenGap: 12 }}>

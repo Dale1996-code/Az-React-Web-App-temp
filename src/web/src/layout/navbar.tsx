@@ -24,7 +24,11 @@ const navStyles: Partial<INavStyles> = {
     },
 };
 
-const NavBar: FC = (): ReactElement => {
+type NavBarProps = {
+    onLinkClick?: () => void;
+};
+
+const NavBar: FC<NavBarProps> = ({ onLinkClick }): ReactElement => {
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -41,6 +45,7 @@ const NavBar: FC = (): ReactElement => {
                 ev?.preventDefault();
                 if (item?.url) {
                     navigate(item.url);
+                    onLinkClick?.();
                 }
             }}
         />

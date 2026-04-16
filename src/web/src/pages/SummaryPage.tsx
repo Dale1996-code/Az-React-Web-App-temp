@@ -459,7 +459,7 @@ const SummaryPage: FC = (): ReactElement => {
     // ── Render ─────────────────────────────────────────────────────────────────
 
     return (
-        <Stack tokens={stackPadding} style={{ maxWidth: 1040, margin: '0 auto', width: '100%' }}>
+        <Stack tokens={stackPadding} style={{ maxWidth: 960, margin: '0 auto', width: '100%' }}>
             {/* Page header */}
             <Stack.Item tokens={stackItemPadding}>
                 <Stack
@@ -487,14 +487,13 @@ const SummaryPage: FC = (): ReactElement => {
 
             {/* Filters */}
             <Stack.Item tokens={stackItemPadding}>
-                <Stack horizontal wrap tokens={{ childrenGap: 16 }} verticalAlign="end">
+                <Stack horizontal wrap tokens={{ childrenGap: 12 }} verticalAlign="end">
                     <TextField
                         label="Date"
                         value={filterDate}
                         onChange={(_, v) => setFilterDate(v ?? '')}
                         placeholder="YYYY-MM-DD"
                         styles={{ root: { width: 150 } }}
-                        description="Leave blank for all dates"
                     />
                     <Dropdown
                         label="Shift"
@@ -502,6 +501,11 @@ const SummaryPage: FC = (): ReactElement => {
                         options={SHIFT_FILTER_OPTIONS}
                         onChange={(_, opt) => setFilterShift((opt?.key as string) ?? '')}
                         styles={{ root: { minWidth: 160 } }}
+                    />
+                    <DefaultButton
+                        text="Clear"
+                        iconProps={{ iconName: 'ClearFilter' }}
+                        onClick={() => { setFilterDate(todayISO()); setFilterShift(''); }}
                     />
                 </Stack>
             </Stack.Item>

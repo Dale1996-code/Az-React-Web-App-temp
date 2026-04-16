@@ -152,17 +152,21 @@ const CoachingRow: FC<CoachingRowProps> = ({
                     <Text
                         variant="small"
                         style={{
-                            display: 'block',
+                            display: 'inline-block',
+                            padding: '2px 10px',
+                            borderRadius: 12,
+                            background: statusColor + '22',
                             color: statusColor,
                             fontWeight: 600,
                             textTransform: 'capitalize',
+                            whiteSpace: 'nowrap',
                         }}
                     >
                         {record.status}
                     </Text>
                 )}
                 {record.followUpDate && (
-                    <Text variant="small" style={{ color: '#605e5c' }}>
+                    <Text variant="small" style={{ color: '#605e5c', display: 'block', marginTop: 4 }}>
                         Follow-up: {record.followUpDate}
                     </Text>
                 )}
@@ -520,14 +524,13 @@ const CoachingPage: FC = (): ReactElement => {
 
             {/* Filters */}
             <Stack.Item tokens={stackItemPadding}>
-                <Stack horizontal wrap tokens={{ childrenGap: 16 }} verticalAlign="end">
+                <Stack horizontal wrap tokens={{ childrenGap: 12 }} verticalAlign="end">
                     <TextField
-                        label="Session date"
+                        label="Date"
                         value={filterDate}
                         onChange={(_, v) => setFilterDate(v ?? '')}
                         placeholder="YYYY-MM-DD"
                         styles={{ root: { width: 160 } }}
-                        description="Leave blank to show all dates"
                     />
                     <Dropdown
                         label="Employee"
@@ -535,6 +538,11 @@ const CoachingPage: FC = (): ReactElement => {
                         options={employeeFilterOptions}
                         onChange={(_, opt) => setFilterEmployeeId((opt?.key as string) ?? '')}
                         styles={{ root: { minWidth: 220 } }}
+                    />
+                    <DefaultButton
+                        text="Clear"
+                        iconProps={{ iconName: 'ClearFilter' }}
+                        onClick={() => { setFilterDate(todayISO()); setFilterEmployeeId(''); }}
                     />
                 </Stack>
             </Stack.Item>
