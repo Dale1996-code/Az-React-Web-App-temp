@@ -466,17 +466,20 @@ const ProductivityPage: FC = (): ReactElement => {
 
             {/* Date filter */}
             <Stack.Item tokens={stackItemPadding}>
-                <TextField
-                    label="Shift date"
-                    value={filterDate}
-                    onChange={(_, v) => {
-                        const val = v ?? '';
-                        setFilterDate(val);
-                    }}
-                    placeholder="YYYY-MM-DD"
-                    styles={{ root: { maxWidth: 200 } }}
-                    description="Showing entries for this date"
-                />
+                <Stack horizontal wrap tokens={{ childrenGap: 12 }} verticalAlign="end">
+                    <TextField
+                        label="Date"
+                        value={filterDate}
+                        onChange={(_, v) => setFilterDate(v ?? '')}
+                        placeholder="YYYY-MM-DD"
+                        styles={{ root: { width: 160 } }}
+                    />
+                    <DefaultButton
+                        text="Clear"
+                        iconProps={{ iconName: 'ClearFilter' }}
+                        onClick={() => setFilterDate(todayISO())}
+                    />
+                </Stack>
             </Stack.Item>
 
             {/* List error */}

@@ -176,7 +176,7 @@ const TaskRow: FC<TaskRowProps> = ({ task, employeeMap, onEdit, onDelete }): Rea
                         styles={{ root: { minWidth: 0, padding: '0 10px', height: 28 } }}
                     />
                     <DefaultButton
-                        text="Delete"
+                        text="Remove"
                         iconProps={{ iconName: 'Delete' }}
                         onClick={() => onDelete(task)}
                         styles={{
@@ -540,7 +540,7 @@ const TasksPage: FC = (): ReactElement => {
     // ── Render ─────────────────────────────────────────────────────────────────
 
     return (
-        <Stack tokens={stackPadding} style={{ maxWidth: 1000, margin: '0 auto', width: '100%' }}>
+        <Stack tokens={stackPadding} style={{ maxWidth: 960, margin: '0 auto', width: '100%' }}>
 
             {/* Page header */}
             <Stack.Item tokens={stackItemPadding}>
@@ -702,9 +702,9 @@ const TasksPage: FC = (): ReactElement => {
                 onDismiss={() => !deleting && setDeleteTarget(null)}
                 dialogContentProps={{
                     type: DialogType.normal,
-                    title: 'Delete task',
+                    title: 'Remove task',
                     subText: deleteTarget
-                        ? `Delete "${deleteTarget.title}"? This cannot be undone.`
+                        ? `Remove "${deleteTarget.title}"? This cannot be undone.`
                         : '',
                 }}
                 modalProps={{ isBlocking: true }}
@@ -719,7 +719,7 @@ const TasksPage: FC = (): ReactElement => {
                 )}
                 <DialogFooter>
                     <PrimaryButton
-                        text={deleting ? 'Deleting…' : 'Delete'}
+                        text={deleting ? 'Removing…' : 'Remove'}
                         onClick={handleDeleteConfirm}
                         disabled={deleting}
                         styles={{ root: { background: '#a4262c', borderColor: '#a4262c' } }}

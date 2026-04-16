@@ -34,10 +34,23 @@ const iconProps: IIconProps = {
     }
 }
 
-const Header: FC = (): ReactElement => {
+type HeaderProps = {
+    onToggleSidebar?: () => void;
+};
+
+const Header: FC<HeaderProps> = ({ onToggleSidebar }): ReactElement => {
     return (
         <Stack horizontal>
-            <Stack horizontal styles={logoStyles}>
+            {/* Hamburger — visible on mobile only via CSS */}
+            <Stack.Item className="mobile-menu-btn">
+                <IconButton
+                    iconProps={{ iconName: 'GlobalNavButton', styles: iconProps.styles }}
+                    onClick={onToggleSidebar}
+                    ariaLabel="Toggle navigation"
+                    styles={{ root: { height: 48, width: 48 } }}
+                />
+            </Stack.Item>
+            <Stack horizontal styles={logoStyles} className="header-logo">
                 <FontIcon aria-label="Store" iconName="Store" className={logoIconClass} />
                 <Text variant="xLarge">Dales Operations</Text>
             </Stack>
