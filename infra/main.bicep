@@ -33,9 +33,27 @@ param apimSku string = 'Consumption'
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
 
+@description('App Service Plan SKU name. B1 is the cheapest tier that supports alwaysOn and Linux. Use B2/B3 for more capacity, S1+ for staging slots, P1v3+ for production scale. Free (F1) and Shared (D1) are NOT supported because alwaysOn is required.')
+@allowed(['B1', 'B2', 'B3', 'S1', 'S2', 'S3', 'P1v3', 'P2v3', 'P3v3'])
+param appServicePlanSkuName string = 'B1'
+
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
+
+// Derive App Service Plan tier from SKU name so callers only need to set one parameter.
+var appServicePlanSkuTierMap = {
+  B1: 'Basic'
+  B2: 'Basic'
+  B3: 'Basic'
+  S1: 'Standard'
+  S2: 'Standard'
+  S3: 'Standard'
+  P1v3: 'PremiumV3'
+  P2v3: 'PremiumV3'
+  P3v3: 'PremiumV3'
+}
+var appServicePlanSkuTier = appServicePlanSkuTierMap[appServicePlanSkuName]
 
 // Organize resources in a resource group
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
@@ -141,8 +159,8 @@ module appServicePlan 'br/public:avm/res/web/serverfarm:0.1.0' = {
   params: {
     name: !empty(appServicePlanName) ? appServicePlanName : '${abbrs.webServerFarms}${resourceToken}'
     sku: {
-      name: 'B3'
-      tier: 'Basic'
+      name: appServicePlanSkuName
+      tier: appServicePlanSkuTier
     }
     location: location
     tags: tags

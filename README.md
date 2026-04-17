@@ -136,6 +136,48 @@ See service-level READMEs for more detail:
 
 The OpenAPI spec lives at [`src/api/openapi.yaml`](src/api/openapi.yaml). The root [`openapi.yaml`](openapi.yaml) mirrors that spec for tooling discovery.
 
+## App Service Plan SKU and Cost
+
+Both App Services (web and API) share a single Linux App Service Plan. The default SKU is **B1** (Basic, 1 vCPU, 1.75 GB RAM), which is the cheapest tier that supports the features this app requires:
+
+| Feature | Required by | Supported from |
+|---|---|---|
+| `alwaysOn` | API + Web site config | Basic (B1) |
+| Linux (`reserved: true`) | Node.js runtime | Basic (B1) |
+| Two sites on one plan | Shared plan | Basic (B1) |
+
+**Free (F1) and Shared (D1) tiers are not supported.** Both apps have `alwaysOn: true` in their site config, which is unavailable below Basic tier; a deployment to F1/D1 will either fail or silently disable always-on, causing cold-start timeouts.
+
+### Approximate monthly cost (B1, East US, 2026)
+
+| Resource | Est. cost |
+|---|---|
+| App Service Plan B1 (Linux) | ~$13/mo |
+| Cosmos DB (serverless, ~0 traffic) | ~$0–2/mo |
+| Key Vault (standard) | ~$0–1/mo |
+| Application Insights + Log Analytics | ~$0–3/mo |
+| **Total dev estimate** | **~$15–20/mo** |
+
+### Overriding the SKU for production
+
+Set the `APP_SERVICE_PLAN_SKU_NAME` environment variable before provisioning. Valid values are: `B1`, `B2`, `B3`, `S1`, `S2`, `S3`, `P1v3`, `P2v3`, `P3v3`.
+
+```bash
+# One-time: write to your azd environment
+azd env set APP_SERVICE_PLAN_SKU_NAME B3   # or S1, P1v3, etc.
+
+# Then provision as normal
+azd provision
+```
+
+You only need to set the SKU name — the tier (`Basic`, `Standard`, `PremiumV3`) is derived automatically.
+
+To revert to dev defaults:
+
+```bash
+azd env set APP_SERVICE_PLAN_SKU_NAME B1
+```
+
 ## Security
 
 A [managed identity](https://docs.microsoft.com/azure/active-directory/managed-identities-azure-resources/overview) is created for the API and used to authenticate with Cosmos DB (RBAC) and Key Vault. No connection strings are used at runtime — the API authenticates via `DefaultAzureCredential`.
