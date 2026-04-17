@@ -34,8 +34,6 @@
     "cors": "^2.8.5",
     "dotenv": "^16.0.1",
     "express": "^4.21.2",
-    "mongodb": "^4.17.0",
-    "mongoose": "^8.9.5",
     "swagger-jsdoc": "^6.2.1",
     "swagger-ui-express": "^4.4.0",
     "uuid": "^11.1.0",
