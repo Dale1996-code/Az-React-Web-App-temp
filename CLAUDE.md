@@ -88,6 +88,7 @@ Vite env vars **must** be prefixed `VITE_`. The `VITE_API_BASE_URL` value must i
 - `infra/main.bicep` is the entry point; `infra/app/*.bicep` holds per-resource AVM modules. Container names in `infra/app/db-avm.bicep` must match `containerNames` in `src/api/src/models/cosmosClient.ts`.
 - API authenticates to Cosmos DB + Key Vault via a user-assigned managed identity (RBAC data-plane role assignment in `cosmos-role-assignment.bicep`). **There are no connection strings at runtime** — avoid introducing any.
 - CI/CD pipelines exist for both GitHub Actions (`.github/workflows/azure-dev.yml`) and Azure DevOps (`.azdo/pipelines/`); configure with `azd pipeline config`.
+- The API App Service `siteConfig.healthCheckPath` is set to `/health` in `main.bicep`. Azure probes this path every minute and replaces instances that fail consistently.
 
 ## Conventions worth preserving
 

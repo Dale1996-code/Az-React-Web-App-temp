@@ -71,6 +71,7 @@ module api './app/api-appservice-avm.bicep' = {
     siteConfig: {
       alwaysOn: true
       linuxFxVersion: 'node|22-lts'
+      healthCheckPath: '/health'
     }
     appSettings: {
       AZURE_KEY_VAULT_ENDPOINT: keyVault.outputs.uri
