@@ -8,7 +8,6 @@
     "lint:fix": "eslint src/**/*.ts --fix",
     "prebuild": "npm run lint",
     "build": "tsc -b .",
-    "prestart": "npm run build",
     "start": "node .",
     "test": "jest --coverage --forceExit"
   },

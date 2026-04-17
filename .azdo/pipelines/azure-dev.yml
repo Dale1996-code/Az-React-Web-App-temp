@@ -29,6 +29,20 @@ steps:
       azd config set auth.useAzCliAuth "true"
     displayName: Configure AZD to Use AZ CLI Authentication.
 
+  - task: NodeTool@0
+    displayName: Install Node.js
+    inputs:
+      versionSpec: '18.x'
+
+  - task: Bash@3
+    displayName: Build API
+    inputs:
+      targetType: 'inline'
+      script: |
+        cd src/api
+        npm ci
+        npm run build
+
   - task: AzureCLI@2
     displayName: Provision Infrastructure
     inputs:
