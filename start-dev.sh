@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Start both the API and web frontend for local development.
-# Requires: Node 18+, npm
+# Requires: Node 22 LTS, npm
 # Usage: ./start-dev.sh
 
 set -e

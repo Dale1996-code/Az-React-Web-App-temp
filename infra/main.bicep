@@ -54,7 +54,7 @@ module web './app/web-appservice-avm.bicep' = {
     tags: tags
     appServicePlanId: appServicePlan.outputs.resourceId
     appInsightResourceId: monitoring.outputs.applicationInsightsResourceId
-    linuxFxVersion: 'node|20-lts'
+    linuxFxVersion: 'node|22-lts'
   }
 }
 
@@ -70,7 +70,7 @@ module api './app/api-appservice-avm.bicep' = {
     appServicePlanId: appServicePlan.outputs.resourceId
     siteConfig: {
       alwaysOn: true
-      linuxFxVersion: 'node|20-lts'
+      linuxFxVersion: 'node|22-lts'
     }
     appSettings: {
       AZURE_KEY_VAULT_ENDPOINT: keyVault.outputs.uri

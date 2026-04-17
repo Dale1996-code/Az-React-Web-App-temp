@@ -12,6 +12,9 @@
     "start": "node .",
     "test": "jest --coverage --forceExit"
   },
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "author": "",
   "license": "MIT",
   "jest": {
