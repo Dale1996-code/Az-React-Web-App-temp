@@ -50,6 +50,41 @@ azd up
 | `azd pipeline config` | Configure GitHub Actions or Azure DevOps CI/CD |
 | `azd down` | Delete all provisioned Azure resources |
 
+## CI/CD
+
+### Which pipeline to use
+
+**GitHub Actions is the primary CI/CD path** (`.github/workflows/azure-dev.yml`).
+
+It runs the full quality gate on every push to `main`/`master`:
+
+1. API unit/integration tests (`npm test`)
+2. API build (`tsc`)
+3. Web build (`vite build`)
+4. `azd provision` + `azd deploy`
+5. Playwright smoke tests against the deployed app
+6. Playwright report uploaded as a workflow artifact
+
+Configure it once with:
+
+```bash
+azd pipeline config          # GitHub Actions (default)
+```
+
+### Azure DevOps alternative
+
+A minimal Azure DevOps pipeline exists at `.azdo/pipelines/azure-dev.yml` for
+teams that cannot use GitHub Actions. It provisions and deploys via `azd` but
+**intentionally skips** API tests, the web build step, and Playwright smoke
+tests. Do not treat it as equivalent to the GitHub Actions workflow without
+first adding those steps.
+
+Configure it with:
+
+```bash
+azd pipeline config --provider azdo
+```
+
 ## Local Development
 
 ### Environment Setup
