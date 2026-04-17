@@ -28,7 +28,7 @@ All resources are provisioned inside a single [resource group](https://docs.micr
 ### Prerequisites
 
 - [Azure Developer CLI](https://aka.ms/azd-install)
-- [Node.js with npm (18.17.1+)](https://nodejs.org/)
+- [Node.js with npm (20.x LTS)](https://nodejs.org/)
 
 ## Quickstart
 

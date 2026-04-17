@@ -4,7 +4,7 @@ Express + TypeScript REST API backed by Azure Cosmos DB (SQL API with managed id
 
 ## Prerequisites
 
-- Node 18+
+- Node 20+
 - npm
 
 ## Local Environment
