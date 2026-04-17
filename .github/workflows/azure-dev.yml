@@ -1,3 +1,21 @@
+# PRIMARY CI/CD PIPELINE — use this path by default.
+#
+# This workflow is the canonical deployment path for this repository.
+# The Azure DevOps pipeline at .azdo/pipelines/azure-dev.yml is a secondary
+# alternative for teams that cannot use GitHub Actions; it intentionally skips
+# API tests, the web build step, and Playwright smoke tests to stay minimal.
+# If you need both pipelines, bring the ADO one to parity rather than letting
+# this one fall behind.
+#
+# Steps run here (ADO equivalents noted where absent):
+#   1. API unit/integration tests       ← ADO SKIPS
+#   2. API build (tsc)
+#   3. Web build (vite)                 ← ADO SKIPS
+#   4. azd provision
+#   5. azd deploy
+#   6. Playwright smoke tests           ← ADO SKIPS
+#   7. Upload Playwright report         ← ADO SKIPS
+
 on:
   workflow_dispatch:
   push:
