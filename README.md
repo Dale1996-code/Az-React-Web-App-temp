@@ -52,6 +52,30 @@ azd up
 
 ## Local Development
 
+### Environment Setup
+
+The frontend has sensible defaults for local dev, so no env file is required to start the UI. The API needs a Cosmos DB endpoint to serve data.
+
+**API** — copy and fill in `src/api/.env.example`:
+
+```bash
+cp src/api/.env.example src/api/.env
+# Edit src/api/.env — set AZURE_COSMOS_ENDPOINT to your Cosmos DB URI
+```
+
+The API authenticates to Cosmos DB with `DefaultAzureCredential`. Run `az login` once so the local developer credential is available.
+
+**Web** — optional; defaults work out of the box:
+
+```bash
+cp src/web/.env.example src/web/.env
+# Edit if you need a non-default API URL or want telemetry locally
+```
+
+> In Azure, all environment variables are injected automatically by the Bicep deployment and the `azd` prepackage hook — you never set them manually in production.
+
+### Run Locally
+
 ```bash
 # Quick start (both API + frontend)
 ./start-dev.sh
@@ -61,7 +85,7 @@ cd src/api && npm ci && NODE_ENV=development npm start   # http://localhost:3100
 cd src/web && npm ci && npm run dev                       # http://localhost:5173
 ```
 
-Run API integration tests (no database required):
+Run API integration tests (no database required — uses in-memory mock):
 
 ```bash
 cd src/api && npm test

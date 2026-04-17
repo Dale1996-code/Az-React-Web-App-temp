@@ -9,13 +9,25 @@ Express + TypeScript REST API backed by Azure Cosmos DB (SQL API with managed id
 
 ## Local Environment
 
-Create a `.env` in `src/api/` with the following:
+Copy `.env.example` to `.env` and fill in your values:
 
-- `AZURE_COSMOS_ENDPOINT` — Cosmos DB account endpoint (e.g. `https://your-account.documents.azure.com:443/`)
-- `AZURE_COSMOS_DATABASE_NAME` — Database name (default: `DalesOperations`)
-- `AZURE_KEY_VAULT_ENDPOINT` — Key Vault URI (optional; secrets are overlaid on env vars at startup)
-- `APPLICATIONINSIGHTS_CONNECTION_STRING` — Application Insights connection string (optional for local dev)
-- `API_ALLOW_ORIGINS` — Comma-separated allowed CORS origins (not needed when `NODE_ENV=development`)
+```bash
+cp .env.example .env
+```
+
+The API authenticates with Cosmos DB using `DefaultAzureCredential`. Run `az login` before starting the server locally so it can pick up your developer credential.
+
+| Variable | Required | Default | Notes |
+|---|---|---|---|
+| `AZURE_COSMOS_ENDPOINT` | Yes | — | Cosmos DB account URI from Azure Portal |
+| `AZURE_COSMOS_DATABASE_NAME` | No | `DalesOperations` | Database name |
+| `AZURE_KEY_VAULT_ENDPOINT` | No | — | When set, vault secrets overlay env vars at startup |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | No | — | API telemetry; skipped when blank |
+| `APPLICATIONINSIGHTS_ROLE_NAME` | No | `API` | Role label in Application Insights |
+| `API_ALLOW_ORIGINS` | No | — | Comma-separated CORS origins; not needed when `NODE_ENV=development` |
+| `PORT` | No | `3100` | HTTP listen port |
+
+In Azure all of these are set as App Service environment variables by the Bicep deployment — you do not manage them manually.
 
 ## Commands
 

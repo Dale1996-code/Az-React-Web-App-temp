@@ -4,13 +4,18 @@ React + Fluent UI frontend built with Vite.
 
 ## Setup
 
-Create a `.env` file in `src/web/` with the following:
+Copy `.env.example` to `.env` and fill in your values:
 
-- `VITE_API_BASE_URL` - Base URL for all API requests (e.g. `http://localhost:3100`)
+```bash
+cp .env.example .env
+```
 
-> The URL must include the scheme: `http://` or `https://`.
+| Variable | Required | Default | Notes |
+|---|---|---|---|
+| `VITE_API_BASE_URL` | No | `http://localhost:3100` | Must include scheme (`http://` or `https://`) |
+| `VITE_APPLICATIONINSIGHTS_CONNECTION_STRING` | No | — | Frontend telemetry; disabled when blank |
 
-- `VITE_APPLICATIONINSIGHTS_CONNECTION_STRING` - Azure Application Insights connection string (optional for local dev)
+Both variables default to sensible local values, so no `.env` file is needed for basic local development. In Azure they are injected automatically by the `azd` prepackage hook (see `azure.yaml`) — you do not set them manually.
 
 ## Available Scripts
 
