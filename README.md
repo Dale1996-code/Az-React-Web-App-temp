@@ -30,11 +30,39 @@ All resources are provisioned inside a single [resource group](https://docs.micr
 - [Azure Developer CLI](https://aka.ms/azd-install)
 - [Node.js 22 LTS with npm](https://nodejs.org/) — Node 20 reached end of life March 2026; Azure App Service targets `node|22-lts`
 
+## Preflight check
+
+Run this before `azd deploy` (or any `azd up`) to verify the repo is in a
+deployable state. It mirrors the build and test steps that run in CI before
+provisioning, so failures are caught locally instead of mid-deploy.
+
+```bash
+./preflight.sh
+```
+
+What it checks (in order):
+
+| Step | Command |
+|---|---|
+| Node version | must be >= 22 LTS |
+| API install | `npm ci` |
+| API tests | `npm test` (in-memory mock, no DB required) |
+| API build | `npm run build` (ESLint + `tsc`) |
+| Web install | `npm ci` |
+| Web lint | `npm run lint` (zero-warning policy) |
+| Web build | `npm run build` (`tsc` + Vite) |
+
+Each step prints `[PASS]` or `[FAIL]`, and a summary table is shown at the end.
+Exit code is `0` when everything passes, `1` when anything fails.
+
 ## Quickstart
 
 ```bash
 # Authenticate once per install
 azd auth login
+
+# Verify the repo is ready first
+./preflight.sh
 
 # Provision infrastructure and deploy
 azd up
