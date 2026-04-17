@@ -40,6 +40,29 @@ azd auth login
 azd up
 ```
 
+## First Deployment Checklist
+
+Before running `azd up` for the first time, confirm the following:
+
+**Prerequisites**
+- [ ] Azure subscription with Contributor or Owner access
+- [ ] [Azure Developer CLI](https://aka.ms/azd-install) (`azd --version` prints a version)
+- [ ] Node.js 22 LTS (`node --version` starts with `v22`)
+- [ ] Azure CLI (`az --version`) — required by `DefaultAzureCredential` for local dev
+
+**Provision and deploy**
+1. `azd auth login` — authenticates `azd` with your Azure account
+2. `azd up` — prompts for environment name, subscription, and region, then provisions infrastructure and deploys both services
+   - Pick a region where B1 Linux App Service and Cosmos DB serverless are available (East US, West Europe, and North Europe are reliable choices)
+   - First provision takes 5–10 minutes; subsequent `azd deploy` runs are ~2 minutes
+3. After `azd up` finishes, run `azd env get-values` and confirm `SERVICE_WEB_URI` and `SERVICE_API_URI` are both present
+4. Open `SERVICE_WEB_URI` in a browser — the app loads with 7 navigation links and the Shift Overview section is visible (confirms end-to-end API connectivity)
+
+**Set up CI/CD (recommended)**
+5. `azd pipeline config` — creates OIDC federated credentials and sets the required GitHub Actions variables (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_ENV_NAME`, `AZURE_LOCATION`) on your fork; subsequent pushes to `main`/`master` trigger the full pipeline automatically
+
+---
+
 ## Developer Commands
 
 | Command | Purpose |
@@ -198,6 +221,85 @@ To revert to dev defaults:
 ```bash
 azd env set APP_SERVICE_PLAN_SKU_NAME B1
 ```
+
+## Troubleshooting
+
+### `azd provision` fails — quota or SKU not available
+
+**Symptom:** provision exits with `QuotaExceeded`, `SkuNotAvailable`, or `Conflict` on the App Service Plan.
+
+**Fix:** try a different Azure region. Some regions have limited B1 Linux capacity. Check your subscription's current App Service Plan count with:
+
+```bash
+az appservice plan list --output table
+```
+
+If you must use a specific region, request a quota increase or override the SKU:
+
+```bash
+azd env set APP_SERVICE_PLAN_SKU_NAME S1   # Standard tier, wider availability
+azd provision
+```
+
+---
+
+### API returns 503 or `/health` fails after deployment
+
+**Symptom:** `GET /health` returns 503; GitHub Actions smoke tests fail on API checks.
+
+**Cause:** the App Service started before the compiled `dist/` directory was in the ZIP, usually because the `prepackage` build step failed silently or `azd deploy` was run without first building.
+
+**Fix:** check the Kudu log stream or run:
+
+```bash
+az webapp log tail --name <api-app-name> --resource-group <resource-group>
+```
+
+Look for `Cannot find module './dist/index'`. If present, re-run `azd deploy` — the prepackage hook (`npm ci && npm run build && npm prune --omit=dev`) will rebuild and re-package correctly.
+
+---
+
+### Web frontend loads but shows API errors or blank data
+
+**Symptom:** routes render but data never loads; browser console shows CORS errors or requests to `http://undefined`.
+
+**Cause:** `VITE_API_BASE_URL` was blank when the web bundle was built. This happens if `azd deploy` ran before `azd provision` (no Bicep outputs available for the prepackage hook to read).
+
+**Fix:** check the injected URL:
+
+```bash
+azd env get-values | grep API_BASE_URL
+```
+
+If `API_BASE_URL` is missing or empty, run `azd provision` first, then `azd deploy`.
+
+---
+
+### GitHub Actions smoke tests fail — `SERVICE_WEB_URI not found`
+
+**Symptom:** the workflow exits with `SERVICE_WEB_URI not found in azd environment`.
+
+**Cause:** the "Provision Infrastructure" step failed, so `azd env get-values` returned nothing.
+
+**Fix:** scroll up to the "Provision Infrastructure" step logs for the underlying error (usually quota, missing variable, or authentication). Fix the root cause, then re-run the workflow.
+
+---
+
+### Health probe or cold-start timeouts (`alwaysOn` not respected)
+
+**Symptom:** the `/health` endpoint occasionally times out; App Service logs show "Instance recycled" frequently.
+
+**Cause:** the App Service Plan was provisioned at F1 or D1 tier, which does not support `alwaysOn`. The deployment may have silently succeeded but disabled always-on.
+
+**Fix:** verify the plan tier:
+
+```bash
+az appservice plan show --name <plan-name> --resource-group <resource-group> --query sku
+```
+
+If the SKU is not B1 or higher, re-provision with the correct tier (see [App Service Plan SKU and Cost](#app-service-plan-sku-and-cost) above).
+
+---
 
 ## Security
 
