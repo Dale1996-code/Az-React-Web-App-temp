@@ -1,0 +1,63 @@
+# .azdignore — controls what azd packages for App Service deployment.
+# Replaces .gitignore for azd's packaging step.
+# dist/ and node_modules/ are intentionally NOT excluded here so that
+# the pre-built artifacts from CI ship with the package (no Oryx rebuild needed).
+
+# Source files not needed at runtime (compiled output lives in dist/)
+src/
+tsconfig.json
+babel.config.js
+
+# Documentation and tooling not needed at runtime
+README.md
+Dockerfile
+
+# Test output
+coverage/
+.nyc_output
+*.lcov
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Dependency caches and build info
+.npm
+.eslintcache
+*.tsbuildinfo
+jspm_packages/
+bower_components
+typings/
+lib-cov
+build/Release
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Misc
+*.tgz
+.yarn-integrity
+.node_repl_history
+.grunt
+.cache
+.fusebox/
+.serverless/
+.dynamodb/
+.tern-port
+
+# Environment files (secrets never ship in the package)
+.env
+.env.test
+local.settings.json

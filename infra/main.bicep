@@ -78,7 +78,7 @@ module api './app/api-appservice-avm.bicep' = {
       AZURE_COSMOS_DATABASE_NAME: cosmos.outputs.databaseName
       AZURE_COSMOS_ENDPOINT: cosmos.outputs.endpoint
       API_ALLOW_ORIGINS: web.outputs.SERVICE_WEB_URI
-      SCM_DO_BUILD_DURING_DEPLOYMENT: true
+      SCM_DO_BUILD_DURING_DEPLOYMENT: false
     }
     appInsightResourceId: monitoring.outputs.applicationInsightsResourceId
     allowedOrigins: [ web.outputs.SERVICE_WEB_URI ]
