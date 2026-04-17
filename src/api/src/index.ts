@@ -10,4 +10,8 @@ const main = async () => {
     });
 };
 
-main();
+main().catch((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.error(`Fatal startup error — process will exit:\n${message}`);
+    process.exit(1);
+});
