@@ -44,6 +44,11 @@ jobs:
         env:
           NODE_ENV: test
 
+      - name: Build API
+        run: |
+          cd src/api
+          npm run build
+
       - name: Build frontend
         run: |
           cd src/web

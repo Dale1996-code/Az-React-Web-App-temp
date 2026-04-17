@@ -11,6 +11,9 @@ echo "=== Installing API dependencies ==="
 echo "=== Installing Web dependencies ==="
 (cd src/web && npm ci --silent)
 
+echo "=== Building API ==="
+(cd src/api && npm run build)
+
 echo "=== Starting API (port 3100) and Web (port 5173) ==="
 echo "API:  http://localhost:3100"
 echo "Web:  http://localhost:5173"

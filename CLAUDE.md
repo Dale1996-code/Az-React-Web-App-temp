@@ -28,7 +28,7 @@ API (`src/api/`):
 | `npm ci` | Install |
 | `npm run lint` / `lint:fix` | ESLint on `src/**/*.ts` (also runs as `prebuild`) |
 | `npm run build` | Lint + `tsc -b` to `dist/` |
-| `npm start` | Runs `prebuild` + `node .` |
+| `npm start` | Runs `node .` — requires `dist/` to exist; `./start-dev.sh` builds first automatically |
 | `npm test` | Jest integration tests, coverage, `--forceExit`. Tests match `**/*.spec.ts`. |
 | `npx jest path/to/file.spec.ts -t "name"` | Single test |
 
