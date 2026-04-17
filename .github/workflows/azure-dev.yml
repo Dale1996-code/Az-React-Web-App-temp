@@ -7,12 +7,22 @@
 # If you need both pipelines, bring the ADO one to parity rather than letting
 # this one fall behind.
 #
+# Build responsibility:
+#   The authoritative builds happen inside azd's prepackage hooks (azure.yaml),
+#   which run as part of `azd deploy`. This means `azd up` / `azd deploy` from
+#   a clean local checkout is fully self-contained — no pre-built artifacts needed.
+#
+#   The explicit "Build API" and "Build frontend" steps below run BEFORE provision
+#   as early validation: they catch compilation or lint failures fast, before the
+#   expensive provision step. azd then rebuilds both services inside its prepackage
+#   hooks (after provision, so the web gets the correct VITE_API_BASE_URL).
+#
 # Steps run here (ADO equivalents noted where absent):
 #   1. API unit/integration tests       ← ADO SKIPS
-#   2. API build (tsc)
-#   3. Web build (vite)                 ← ADO SKIPS
+#   2. API build validation (tsc)       ← early fail-fast; azd hook rebuilds for deploy
+#   3. Web build validation (vite)      ← ADO SKIPS; early fail-fast only
 #   4. azd provision
-#   5. azd deploy
+#   5. azd deploy  (prepackage hooks build both services with correct env vars)
 #   6. Playwright smoke tests           ← ADO SKIPS
 #   7. Upload Playwright report         ← ADO SKIPS
 

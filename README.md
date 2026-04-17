@@ -50,6 +50,27 @@ azd up
 | `azd pipeline config` | Configure GitHub Actions or Azure DevOps CI/CD |
 | `azd down` | Delete all provisioned Azure resources |
 
+## Build flow for `azd`
+
+Both services are built inside `azure.yaml` `prepackage` hooks, so `azd up` and
+`azd deploy` are fully self-contained from a clean checkout — no pre-built
+artifacts or CI run required.
+
+**API** (`src/api/`) — runs before azd packages the service directory:
+1. `npm ci` — install all dependencies (including devDependencies needed for the build)
+2. `npm run build` — ESLint + `tsc`, outputs compiled JS to `dist/`
+3. `npm prune --omit=dev` — strip devDependencies before packaging
+
+App Service starts the API with `node .`, which resolves `main = dist/index.js`.
+
+**Web** (`src/web/`) — runs before azd packages the `dist/` directory:
+1. Write `.env.local` — injects `VITE_API_BASE_URL` and `VITE_APPLICATIONINSIGHTS_CONNECTION_STRING` from the Bicep outputs exported by `azd provision`
+2. `npm ci` — install dependencies
+3. `npm run build` — `tsc && vite build`, which bakes the `VITE_*` env vars into the static bundle and outputs to `dist/`
+
+The `.env.local` file is git-ignored and deleted by the `postdeploy` hook after
+the deploy completes.
+
 ## CI/CD
 
 ### Which pipeline to use
