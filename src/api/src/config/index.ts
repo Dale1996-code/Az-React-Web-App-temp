@@ -19,15 +19,7 @@ export const getConfig: () => Promise<AppConfig> = async () => {
     const databaseConfig = config.get<DatabaseConfig>("database");
     const observabilityConfig = config.get<ObservabilityConfig>("observability");
 
-    if (!databaseConfig.endpoint) {
-        logger.warn("database.endpoint is required but has not been set. Ensure environment variable 'AZURE_COSMOS_ENDPOINT' has been set");
-    }
-
-    if (!observabilityConfig.connectionString) {
-        logger.warn("observability.connectionString is required but has not been set. Ensure environment variable 'APPLICATIONINSIGHTS_CONNECTION_STRING' has been set");
-    }
-
-    return {
+    const appConfig: AppConfig = {
         observability: {
             connectionString: observabilityConfig.connectionString,
             roleName: observabilityConfig.roleName,
@@ -37,6 +29,72 @@ export const getConfig: () => Promise<AppConfig> = async () => {
             databaseName: databaseConfig.databaseName,
         },
     };
+
+    validateConfig(appConfig);
+
+    return appConfig;
+};
+
+/**
+ * Validates required configuration settings.
+ *
+ * In production all required settings must be present and well-formed —
+ * a missing value that only surfaces at the first DB call is much harder
+ * to diagnose than a startup failure with a clear message.
+ *
+ * In development warnings are emitted but startup continues so engineers
+ * can run the server without every Azure resource wired up.
+ */
+const validateConfig = (config: AppConfig): void => {
+    const isProduction = process.env.NODE_ENV === "production";
+    const errors: string[] = [];
+
+    // AZURE_COSMOS_ENDPOINT — without this every DB call fails with a cryptic SDK error.
+    if (!config.database.endpoint) {
+        errors.push(
+            "AZURE_COSMOS_ENDPOINT is not set. " +
+            "Set it to your Cosmos DB account URI (e.g. https://<account>.documents.azure.com:443/)."
+        );
+    } else {
+        let parsedUrl: URL | undefined;
+        try {
+            parsedUrl = new URL(config.database.endpoint);
+        } catch {
+            errors.push(
+                `AZURE_COSMOS_ENDPOINT is not a valid URL: "${config.database.endpoint}". ` +
+                "Expected format: https://<account>.documents.azure.com:443/"
+            );
+        }
+        if (parsedUrl && parsedUrl.protocol !== "https:") {
+            errors.push(
+                `AZURE_COSMOS_ENDPOINT must use https:// — got "${config.database.endpoint}".`
+            );
+        }
+    }
+
+    if (!config.observability.connectionString) {
+        // Telemetry is optional; observability.ts handles a missing string gracefully.
+        logger.warn(
+            "APPLICATIONINSIGHTS_CONNECTION_STRING is not set — telemetry will be disabled. " +
+            "Set it to the Application Insights connection string to enable monitoring."
+        );
+    }
+
+    if (errors.length === 0) {
+        return;
+    }
+
+    const detail = errors.map(e => `  • ${e}`).join("\n");
+    const hint = isProduction
+        ? "In Azure these values are injected by the Bicep deployment. Check the App Service configuration in the Azure Portal."
+        : "Copy src/api/.env.example to src/api/.env and fill in the missing values.";
+
+    const message = `Startup aborted — required configuration is missing or invalid:\n${detail}\n\n${hint}`;
+    logger.error(message);
+
+    if (isProduction) {
+        throw new Error(message);
+    }
 };
 
 const populateEnvironmentFromKeyVault = async () => {
