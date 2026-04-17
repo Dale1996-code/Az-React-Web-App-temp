@@ -15,18 +15,27 @@ services:
     language: js
     host: appservice
     hooks:
-      # Creates a temporary `.env.local` file for the build command. Vite will automatically use it during build.
-      # The expected/required values are mapped to the infrastructure outputs.
-      # .env.local is ignored by git, so it will not be committed if, for any reason, if deployment fails.
+      # prepackage: write VITE_* env vars from Bicep outputs into .env.local so Vite
+      # bakes them into the bundle, then install deps and build. This is the
+      # authoritative web build step — it runs for both `azd up` (local) and
+      # `azd deploy` (CI), ensuring the correct API URL is always embedded.
+      # .env.local is git-ignored and removed in postdeploy.
       # see: https://vitejs.dev/guide/env-and-mode
-      # Note: Notice that dotenv must be a project dependency for this to work. See package.json.
       prepackage:
         windows:
           shell: pwsh
-          run: 'echo "VITE_API_BASE_URL=""$env:API_BASE_URL""" > .env.local ; echo "VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=""$env:APPLICATIONINSIGHTS_CONNECTION_STRING""" >> .env.local'
+          run: |
+            echo "VITE_API_BASE_URL=""$env:API_BASE_URL""" > .env.local
+            echo "VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=""$env:APPLICATIONINSIGHTS_CONNECTION_STRING""" >> .env.local
+            npm ci
+            npm run build
         posix:
           shell: sh
-          run: 'echo VITE_API_BASE_URL=\"$API_BASE_URL\" > .env.local && echo VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=\"$APPLICATIONINSIGHTS_CONNECTION_STRING\" >> .env.local'    
+          run: |
+            echo VITE_API_BASE_URL=\"$API_BASE_URL\" > .env.local
+            echo VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=\"$APPLICATIONINSIGHTS_CONNECTION_STRING\" >> .env.local
+            npm ci
+            npm run build
       postdeploy:
         windows:
           shell: pwsh
@@ -38,3 +47,19 @@ services:
     project: ./src/api
     language: js
     host: appservice
+    hooks:
+      # prepackage: install deps, compile TypeScript (lint + tsc → dist/), then
+      # prune devDependencies so the deployed artifact is production-only.
+      # This is the authoritative API build step — required for both `azd up`
+      # (local clean checkout) and `azd deploy` (CI), because App Service runs
+      # `node .` which resolves main=dist/index.js and expects compiled output.
+      prepackage:
+        windows:
+          shell: pwsh
+          run: |
+            npm ci
+            npm run build
+            npm prune --omit=dev
+        posix:
+          shell: sh
+          run: 'npm ci && npm run build && npm prune --omit=dev'
