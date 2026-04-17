@@ -67,6 +67,11 @@ jobs:
           cd src/api
           npm run build
 
+      - name: Prune API devDependencies
+        run: |
+          cd src/api
+          npm prune --omit=dev
+
       - name: Build frontend
         run: |
           cd src/web
