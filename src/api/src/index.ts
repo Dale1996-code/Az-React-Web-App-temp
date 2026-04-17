@@ -6,8 +6,11 @@ const main = async () => {
     const port = process.env.FUNCTIONS_CUSTOMHANDLER_PORT || process.env.PORT || 3100;
 
     app.listen(port, () => {
-        logger.info(`Started listening on port ${port}`);
+        logger.info(`API listening on port ${port}`);
     });
 };
 
-main();
+main().catch(err => {
+    logger.error(`Fatal startup error: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+});

@@ -2,6 +2,7 @@ import express, { Request, Router } from "express";
 import { BaseEntity, BaseRepository } from "../models/baseRepository";
 import { Validator } from "../validation";
 import { PagingQueryParams } from "./common";
+import { logger } from "../config/observability";
 
 /**
  * Optional in-memory filter applied after findAll() on GET /.
@@ -55,7 +56,7 @@ export const createCrudRouter = <T extends BaseEntity>(
                 const top = req.query.top ? parseInt(req.query.top) : 100;
                 res.json(items.slice(skip, skip + top));
             } catch (err) {
-                console.error(`Error fetching ${label}:`, err);
+                logger.error(`[${label}] ${req.method} ${req.originalUrl} 500 – ${err instanceof Error ? err.message : String(err)}`);
                 res.status(500).json({ error: "Internal server error" });
             }
         },
@@ -78,7 +79,7 @@ export const createCrudRouter = <T extends BaseEntity>(
             res.setHeader("location", `${req.protocol}://${req.get("Host")}${req.baseUrl}/${created.id}`);
             res.status(201).json(created);
         } catch (err) {
-            console.error(`Error creating ${label}:`, err);
+            logger.error(`[${label}] ${req.method} ${req.originalUrl} 500 – ${err instanceof Error ? err.message : String(err)}`);
             res.status(500).json({ error: "Internal server error" });
         }
     });
@@ -93,7 +94,7 @@ export const createCrudRouter = <T extends BaseEntity>(
             }
             res.json(item);
         } catch (err) {
-            console.error(`Error fetching ${label} by id:`, err);
+            logger.error(`[${label}] ${req.method} ${req.originalUrl} 500 – ${err instanceof Error ? err.message : String(err)}`);
             res.status(500).json({ error: "Internal server error" });
         }
     });
@@ -116,7 +117,7 @@ export const createCrudRouter = <T extends BaseEntity>(
             }
             res.json(updated);
         } catch (err) {
-            console.error(`Error updating ${label}:`, err);
+            logger.error(`[${label}] ${req.method} ${req.originalUrl} 500 – ${err instanceof Error ? err.message : String(err)}`);
             res.status(500).json({ error: "Internal server error" });
         }
     });
@@ -131,7 +132,7 @@ export const createCrudRouter = <T extends BaseEntity>(
             }
             res.status(204).send();
         } catch (err) {
-            console.error(`Error deleting ${label}:`, err);
+            logger.error(`[${label}] ${req.method} ${req.originalUrl} 500 – ${err instanceof Error ? err.message : String(err)}`);
             res.status(500).json({ error: "Internal server error" });
         }
     });

@@ -1,4 +1,5 @@
 import express, { Router } from "express";
+import { logger } from "../config/observability";
 import { BaseRepository } from "../models/baseRepository";
 import { Employee } from "../models/employee";
 import { Task } from "../models/task";
@@ -133,7 +134,7 @@ router.get("/", async (req, res) => {
             latestSummary,
         });
     } catch (err) {
-        console.error("Error fetching dashboard summary:", err);
+        logger.error(`[dashboard] GET /dashboard?date=${date} 500 – ${err instanceof Error ? err.message : String(err)}`);
         res.status(500).json({ error: "Internal server error" });
     }
 });
