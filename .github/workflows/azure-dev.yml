@@ -92,3 +92,32 @@ jobs:
           AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
           AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
           AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install Playwright dependencies
+        run: |
+          cd tests
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run smoke tests against deployed app
+        run: |
+          WEB_URL=$(azd env get-values | grep '^SERVICE_WEB_URI=' | cut -d'=' -f2- | tr -d '"')
+          if [ -z "$WEB_URL" ]; then
+            echo "::error::SERVICE_WEB_URI not found in azd environment — check that azd provision succeeded"
+            exit 1
+          fi
+          echo "Smoke testing: $WEB_URL"
+          cd tests
+          REACT_APP_WEB_BASE_URL="$WEB_URL" npx playwright test
+        env:
+          AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          CI: "true"
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: tests/playwright-report/
+          retention-days: 7
