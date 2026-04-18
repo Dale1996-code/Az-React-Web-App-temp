@@ -1,5 +1,5 @@
 import { createCrudRouter } from "./createCrudRouter";
-import { BaseRepository } from "../models/baseRepository";
+import { BaseRepository, FilterCondition } from "../models/baseRepository";
 import { ProductivityRecord } from "../models/productivity";
 import { getContainer } from "../models/cosmosClient";
 import { validateProductivity } from "../validation";
@@ -9,19 +9,19 @@ export default createCrudRouter<ProductivityRecord>(
     () => new BaseRepository<ProductivityRecord>(getContainer("productivity")),
     "productivity",
     validateProductivity,
-    (items, query) => {
-        let result = items;
+    (query) => {
+        const conditions: FilterCondition[] = [];
 
         // ?date=YYYY-MM-DD  (exact match on storeDate)
         if (query.date) {
-            result = result.filter(p => p.storeDate === query.date);
+            conditions.push({ op: "eq", field: "storeDate", value: query.date });
         }
 
         // ?employeeId=<id>
         if (query.employeeId) {
-            result = result.filter(p => p.employeeId === query.employeeId);
+            conditions.push({ op: "eq", field: "employeeId", value: query.employeeId });
         }
 
-        return result;
+        return { conditions };
     },
 );

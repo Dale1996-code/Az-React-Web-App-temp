@@ -76,3 +76,32 @@ The `/health` endpoint is always unauthenticated (used by Azure deployment probe
 | `/issues` | Required | Issue log CRUD |
 | `/summaries` | Required | Daily summary CRUD |
 | `/dashboard?date=YYYY-MM-DD` | Required | Aggregated dashboard data |
+
+## Query parameters (list endpoints)
+
+All `GET /` list endpoints support `?top=N&skip=N` pagination (default: top=100, skip=0).
+
+Each collection also accepts collection-specific filters that are pushed server-side as Cosmos parameterized queries rather than fetched and filtered in memory:
+
+| Collection | Supported filters |
+|---|---|
+| `employees` | `?active=true\|false`, `?department=<name>`, `?search=<term>` |
+| `tasks` | `?status=notStarted\|inProgress\|completed`, `?date=YYYY-MM-DD`, `?department=<name>` |
+| `issues` | `?date=YYYY-MM-DD`, `?status=open\|resolved`, `?department=<name>`, `?category=<name>` |
+| `coaching` | `?date=YYYY-MM-DD`, `?employeeId=<id>` |
+| `productivity` | `?date=YYYY-MM-DD`, `?employeeId=<id>` |
+| `summaries` | `?date=YYYY-MM-DD`, `?shiftLabel=<label>` |
+
+## Scalability notes (Phase 2)
+
+**Before (Phase 1 and earlier):** All list endpoints called `readAll().fetchAll()` to load the entire container, then filtered and paginated in memory. The `/dashboard` endpoint loaded all six collections in full every request.
+
+**After (Phase 2):** 
+- List endpoints use `findWhere()` which emits a parameterized Cosmos SQL query with `WHERE`, `ORDER BY`, and `OFFSET N LIMIT M` clauses — only matching rows are returned over the wire.
+- `/dashboard` fans out targeted queries: count queries (`SELECT VALUE COUNT(1) FROM c WHERE ...`) for totals, bounded `LIMIT 5` queries for lists, and point reads for employee name lookups. No full-collection scans.
+- In test mode (`NODE_ENV=test`) the same `FindSpec` structs are evaluated against the in-memory mock store, so no real database is needed for tests.
+
+**Tradeoffs:**
+- Cosmos SQL `OFFSET N LIMIT M` pagination is not keyset-based; deep offsets (large skip values) still scan the skipped rows on the server. For the current data volumes this is acceptable; switch to continuation tokens if pages grow very large.
+- `ORDER BY` on a field not covered by a composite index will trigger a full-partition scan in Cosmos. Add composite indexes to `infra/app/db-avm.bicep` as query patterns are confirmed.
+- The dashboard `followUpDate <= date` condition requires `followUpDate` to be indexed. Cosmos indexes all paths by default, so this works out of the box.

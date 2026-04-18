@@ -1,6 +1,6 @@
 import express, { Router } from "express";
 import { logger } from "../config/observability";
-import { BaseRepository } from "../models/baseRepository";
+import { BaseRepository, FilterCondition } from "../models/baseRepository";
 import { Employee } from "../models/employee";
 import { Task } from "../models/task";
 import { IssueLog } from "../models/issue";
@@ -17,7 +17,7 @@ const router: Router = express.Router();
  * GET /dashboard?date=YYYY-MM-DD
  *
  * Returns a shift-day overview for the Dashboard page.
- * Includes counts, recent items, and snapshot data from all slices.
+ * All queries are bounded — no full-container scans.
  */
 router.get("/", async (req, res) => {
     const rawDate = typeof req.query.date === "string" ? req.query.date : "";
@@ -26,17 +26,60 @@ router.get("/", async (req, res) => {
         : new Date().toISOString().slice(0, 10);
 
     try {
-        const [employees, tasks, issues, coaching, productivity, summaries] = await Promise.all([
-            new BaseRepository<Employee>(getContainer("employees")).findAll(),
-            new BaseRepository<Task>(getContainer("tasks")).findAll(),
-            new BaseRepository<IssueLog>(getContainer("issues")).findAll(),
-            new BaseRepository<CoachingRecord>(getContainer("coaching")).findAll(),
-            new BaseRepository<ProductivityRecord>(getContainer("productivity")).findAll(),
-            new BaseRepository<DailySummary>(getContainer("summaries")).findAll(),
+        const taskRepo        = new BaseRepository<Task>(getContainer("tasks"));
+        const issueRepo       = new BaseRepository<IssueLog>(getContainer("issues"));
+        const coachingRepo    = new BaseRepository<CoachingRecord>(getContainer("coaching"));
+        const employeeRepo    = new BaseRepository<Employee>(getContainer("employees"));
+        const productivityRepo = new BaseRepository<ProductivityRecord>(getContainer("productivity"));
+        const summaryRepo     = new BaseRepository<DailySummary>(getContainer("summaries"));
+
+        // ── Conditions reused across queries ──────────────────────────────
+        const openIssueConds: FilterCondition[] = [
+            { op: "eq", field: "status", value: "open" },
+        ];
+        const followUpConds: FilterCondition[] = [
+            { op: "is_defined", field: "followUpDate" },
+            { op: "lte",        field: "followUpDate", value: date },
+        ];
+
+        // ── Fan out all independent queries in parallel ───────────────────
+        const [
+            dayTasks,
+            openIssuesCount,
+            recentOpenIssues,
+            followUpCount,
+            upcomingFollowUpRecords,
+            activeEmployeesCount,
+            dayProductivity,
+            dateSummaries,
+        ] = await Promise.all([
+            // Tasks for the requested date — bounded to one day
+            taskRepo.findWhere({ conditions: [{ op: "eq", field: "storeDate", value: date }] }),
+            // Count of all open issues
+            issueRepo.countWhere(openIssueConds),
+            // Five most recent open issues
+            issueRepo.findWhere({
+                conditions: openIssueConds,
+                orderBy: { field: "storeDate", desc: true },
+                top: 5,
+            }),
+            // Count of coaching follow-ups due on or before the date
+            coachingRepo.countWhere(followUpConds),
+            // Five most overdue follow-ups (ascending = oldest first)
+            coachingRepo.findWhere({
+                conditions: followUpConds,
+                orderBy: { field: "followUpDate", desc: false },
+                top: 5,
+            }),
+            // Active employee count
+            employeeRepo.countWhere([{ op: "eq", field: "isActive", value: true }]),
+            // Productivity records for the date — bounded to one day
+            productivityRepo.findWhere({ conditions: [{ op: "eq", field: "storeDate", value: date }] }),
+            // Summaries for the exact date
+            summaryRepo.findWhere({ conditions: [{ op: "eq", field: "storeDate", value: date }], top: 1 }),
         ]);
 
-        // ── Task counts for the requested date ────────────────────────────
-        const dayTasks = tasks.filter(t => t.storeDate === date);
+        // ── Task counts ───────────────────────────────────────────────────
         const taskCounts = {
             notStarted: dayTasks.filter(t => t.status === "notStarted").length,
             inProgress: dayTasks.filter(t => t.status === "inProgress").length,
@@ -49,50 +92,34 @@ router.get("/", async (req, res) => {
             .slice(0, 5)
             .map(t => ({ id: t.id, title: t.title, status: t.status, dueTime: t.dueTime }));
 
-        // ── Open issues (all dates) ───────────────────────────────────────
-        const openIssues = issues.filter(i => i.status === "open");
-        const openIssuesCount = openIssues.length;
+        // ── Open issues ───────────────────────────────────────────────────
+        const recentOpenIssuesMapped = recentOpenIssues.map(i => ({
+            id: i.id,
+            category: i.category,
+            department: i.department,
+            description: i.description,
+            storeDate: i.storeDate,
+        }));
 
-        // Most recent open issues (up to 5), sorted newest first by storeDate
-        const recentOpenIssues = openIssues
-            .sort((a, b) => b.storeDate.localeCompare(a.storeDate))
-            .slice(0, 5)
-            .map(i => ({
-                id: i.id,
-                category: i.category,
-                department: i.department,
-                description: i.description,
-                storeDate: i.storeDate,
-            }));
-
-        // ── Coaching follow-ups due on or before the date ─────────────────
-        const followUpsDue = coaching.filter(
-            c => typeof c.followUpDate === "string" && c.followUpDate <= date,
+        // ── Coaching follow-ups with employee names ───────────────────────
+        // Point-read each unique employee rather than loading the full roster.
+        const employeeIds = [...new Set(upcomingFollowUpRecords.map(c => c.employeeId))];
+        const employeeResults = await Promise.all(employeeIds.map(id => employeeRepo.findById(id)));
+        const empMap = new Map(
+            employeeIds.map((id, i) => [id, employeeResults[i]])
         );
-        const coachingFollowUpsDueCount = followUpsDue.length;
 
-        // Build employee lookup for names
-        const empMap = new Map(employees.map(e => [e.id, e]));
+        const upcomingFollowUps = upcomingFollowUpRecords.map(c => {
+            const emp = empMap.get(c.employeeId);
+            return {
+                id: c.id,
+                employeeName: emp ? `${emp.firstName} ${emp.lastName}` : c.employeeId,
+                topic: c.topic,
+                followUpDate: c.followUpDate,
+            };
+        });
 
-        // Recent coaching follow-ups (up to 5), sorted by followUpDate ascending (most overdue first)
-        const upcomingFollowUps = followUpsDue
-            .sort((a, b) => (a.followUpDate ?? "").localeCompare(b.followUpDate ?? ""))
-            .slice(0, 5)
-            .map(c => {
-                const emp = empMap.get(c.employeeId);
-                return {
-                    id: c.id,
-                    employeeName: emp ? `${emp.firstName} ${emp.lastName}` : c.employeeId,
-                    topic: c.topic,
-                    followUpDate: c.followUpDate,
-                };
-            });
-
-        // ── Active employees ──────────────────────────────────────────────
-        const activeEmployeesCount = employees.filter(e => e.isActive).length;
-
-        // ── Productivity snapshot for the day ─────────────────────────────
-        const dayProductivity = productivity.filter(p => p.storeDate === date);
+        // ── Productivity snapshot ─────────────────────────────────────────
         const totalUnitsStocked = dayProductivity.reduce(
             (sum, p) => sum + (p.freightStockedUnits ?? 0), 0,
         );
@@ -101,14 +128,17 @@ router.get("/", async (req, res) => {
             totalUnitsStocked,
         };
 
-        // ── Latest daily summary for the date (or most recent before it) ─
-        const dateSummaries = summaries.filter(s => s.storeDate === date);
-        // If none for today, find the most recent one overall
-        const bestSummary = dateSummaries.length > 0
-            ? dateSummaries[0]
-            : summaries
-                .filter(s => s.storeDate <= date)
-                .sort((a, b) => b.storeDate.localeCompare(a.storeDate))[0] ?? null;
+        // ── Latest summary ────────────────────────────────────────────────
+        // If no summary for today, fetch the most recent one on or before the date.
+        let bestSummary = dateSummaries[0] ?? null;
+        if (!bestSummary) {
+            const [fallback] = await summaryRepo.findWhere({
+                conditions: [{ op: "lte", field: "storeDate", value: date }],
+                orderBy: { field: "storeDate", desc: true },
+                top: 1,
+            });
+            bestSummary = fallback ?? null;
+        }
 
         const latestSummary = bestSummary
             ? {
@@ -126,8 +156,8 @@ router.get("/", async (req, res) => {
             taskCounts,
             urgentTasks,
             openIssuesCount,
-            recentOpenIssues,
-            coachingFollowUpsDueCount,
+            recentOpenIssues: recentOpenIssuesMapped,
+            coachingFollowUpsDueCount: followUpCount,
             upcomingFollowUps,
             activeEmployeesCount,
             productivitySnapshot,

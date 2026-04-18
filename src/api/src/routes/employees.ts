@@ -1,5 +1,5 @@
 import { createCrudRouter } from "./createCrudRouter";
-import { BaseRepository } from "../models/baseRepository";
+import { BaseRepository, FilterCondition } from "../models/baseRepository";
 import { Employee } from "../models/employee";
 import { getContainer } from "../models/cosmosClient";
 import { validateEmployee } from "../validation";
@@ -9,32 +9,31 @@ export default createCrudRouter<Employee>(
     () => new BaseRepository<Employee>(getContainer("employees")),
     "employees",
     validateEmployee,
-    (items, query) => {
-        let result = items;
+    (query) => {
+        const conditions: FilterCondition[] = [];
 
         // ?active=true|false
         if (query.active !== undefined) {
-            const active = query.active === "true";
-            result = result.filter(e => e.isActive === active);
+            conditions.push({ op: "eq", field: "isActive", value: query.active === "true" });
         }
 
         // ?department=<name>  (case-insensitive exact match)
         if (query.department) {
-            const dept = query.department.toLowerCase();
-            result = result.filter(e => e.department?.toLowerCase() === dept);
+            conditions.push({ op: "eq_ci", field: "department", value: query.department });
         }
 
         // ?search=<term>  (firstName, lastName, or employeeCode)
         if (query.search) {
-            const term = query.search.toLowerCase();
-            result = result.filter(
-                e =>
-                    e.firstName.toLowerCase().includes(term) ||
-                    e.lastName.toLowerCase().includes(term) ||
-                    (e.employeeCode?.toLowerCase().includes(term) ?? false),
-            );
+            conditions.push({
+                op: "or",
+                conditions: [
+                    { op: "contains_ci", field: "firstName",    value: query.search },
+                    { op: "contains_ci", field: "lastName",     value: query.search },
+                    { op: "contains_ci", field: "employeeCode", value: query.search },
+                ],
+            });
         }
 
-        return result;
+        return { conditions };
     },
 );

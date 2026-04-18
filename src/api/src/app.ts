@@ -70,16 +70,13 @@ export const createApp = async (): Promise<Express> => {
         res.json({ status: "ok", timestamp: new Date().toISOString(), env: process.env.NODE_ENV ?? "production" });
     });
 
-    // Swagger UI — open without auth so the spec remains browsable for support/tooling.
-    // Business data is not exposed by the spec itself.
-    const swaggerDocument = yaml.load("./openapi.yaml");
-    app.use("/", swaggerUI.serve, swaggerUI.setup(swaggerDocument));
-
     // Auth middleware — bypassed automatically when NODE_ENV !== "production".
     // See src/api/src/middleware/auth.ts for behaviour details.
     const requireAuth = createAuthMiddleware(config.auth);
 
     // Dales Operations API routes — auth required on every business endpoint.
+    // These must be registered before Swagger UI; swagger-ui-express setup()
+    // never calls next(), so any route mounted after it is unreachable.
     app.use("/dashboard", requireAuth, dashboard);
     app.use("/employees", requireAuth, employees);
     app.use("/tasks", requireAuth, tasks);
@@ -87,6 +84,11 @@ export const createApp = async (): Promise<Express> => {
     app.use("/coaching", requireAuth, coaching);
     app.use("/issues", requireAuth, issues);
     app.use("/summaries", requireAuth, summaries);
+
+    // Swagger UI — open without auth so the spec remains browsable for support/tooling.
+    // Business data is not exposed by the spec itself.
+    const swaggerDocument = yaml.load("./openapi.yaml");
+    app.use("/", swaggerUI.serve, swaggerUI.setup(swaggerDocument));
 
     return app;
 };

@@ -1,21 +1,21 @@
 import express, { Request, Router } from "express";
-import { BaseEntity, BaseRepository } from "../models/baseRepository";
+import { BaseEntity, BaseRepository, FindSpec } from "../models/baseRepository";
 import { Validator } from "../validation";
 import { PagingQueryParams } from "./common";
 import { logger } from "../config/observability";
 
 /**
- * Optional in-memory filter applied after findAll() on GET /.
- * Receives the full list and the raw query string params; returns the filtered subset.
- * Filtering happens before pagination so ?top/skip counts apply to the filtered set.
+ * Translates collection-specific query-string params into a Cosmos FindSpec
+ * (conditions + optional sort order). Pagination (top/skip) is injected by
+ * the router from the request's own query params, so do not set those here.
  */
-export type QueryFilter<T> = (items: T[], query: Record<string, string>) => T[];
+export type SpecBuilder = (query: Record<string, string>) => Omit<FindSpec, "top" | "skip">;
 
 /**
  * Creates a standard REST CRUD router for a single Dales Operations collection.
  *
  * Routes:
- *   GET    /        – list all (with ?top= and ?skip= pagination)
+ *   GET    /        – list (server-side filtered + paginated via ?top= and ?skip=)
  *   POST   /        – create new
  *   GET    /:id     – get by id
  *   PUT    /:id     – update by id
@@ -25,36 +25,35 @@ export type QueryFilter<T> = (items: T[], query: Record<string, string>) => T[];
  * Cosmos DB container is resolved lazily — after configureCosmos has run.
  *
  * `validate` is an optional per-collection validator called before every
- * POST (isUpdate=false) and PUT (isUpdate=true).  When validation fails the
- * router returns 400 { error, details }.  When it passes, the sanitized
+ * POST (isUpdate=false) and PUT (isUpdate=true). When validation fails the
+ * router returns 400 { error, details }. When it passes, the sanitized
  * (allowlisted + trimmed) body is forwarded to the repository.
  *
- * `queryFilter` is an optional collection-specific filter applied to the full
- * list on GET / before pagination.
+ * `buildSpec` is an optional collection-specific function that converts
+ * query-string params into filter conditions sent to Cosmos, replacing the
+ * old in-memory queryFilter pattern.
  */
 export const createCrudRouter = <T extends BaseEntity>(
     getRepository: () => BaseRepository<T>,
     label: string,
     validate?: Validator,
-    queryFilter?: QueryFilter<T>,
+    buildSpec?: SpecBuilder,
 ): Router => {
     const router = express.Router();
 
-    // GET / — list all (with optional filtering and pagination)
+    // GET / — list with server-side filtering and pagination
     router.get(
         "/",
         async (req: Request<unknown, unknown, unknown, PagingQueryParams>, res) => {
             try {
-                const repository = getRepository();
-                let items = await repository.findAll();
-
-                if (queryFilter) {
-                    items = queryFilter(items, req.query as Record<string, string>);
-                }
-
                 const skip = req.query.skip ? parseInt(req.query.skip) : 0;
                 const top = req.query.top ? parseInt(req.query.top) : 100;
-                res.json(items.slice(skip, skip + top));
+                const spec: FindSpec = buildSpec
+                    ? { ...buildSpec(req.query as Record<string, string>), top, skip }
+                    : { top, skip };
+                const repository = getRepository();
+                const items = await repository.findWhere(spec);
+                res.json(items);
             } catch (err) {
                 logger.error(`[${label}] ${req.method} ${req.originalUrl} 500 – ${err instanceof Error ? err.message : String(err)}`);
                 res.status(500).json({ error: "Internal server error" });
