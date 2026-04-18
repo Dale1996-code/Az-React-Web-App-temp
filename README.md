@@ -267,16 +267,32 @@ Use this checklist when something breaks in production. Work top to bottom — t
 | **Deployment failed** | GitHub Actions run → **Provision Infrastructure** or **Deploy** step | Quota errors, missing env vars, build failures |
 | **Telemetry missing entirely** | App Insights → **Live Metrics** | If no data flows, check `APPLICATIONINSIGHTS_CONNECTION_STRING` on the App Service |
 
+#### Prerequisite: enable App Service filesystem logging
+
+`az webapp log tail` streams stdout/stderr from the App Service. This requires filesystem logging to be turned on — it is **off by default** on a freshly provisioned App Service.
+
+Enable it once per environment:
+
+```bash
+az webapp log config \
+  --name <api-app-name> \
+  --resource-group <resource-group> \
+  --application-logging filesystem \
+  --level information
+```
+
+The API writes every log line to stdout (always, regardless of App Insights status), so once filesystem logging is enabled the log stream will show all startup messages, request errors, and health probes.
+
 #### Useful CLI commands for quick triage
 
 ```bash
-# Tail the API log stream live
+# Tail the API log stream live (requires filesystem logging enabled — see above)
 az webapp log tail --name <api-app-name> --resource-group <resource-group>
 
 # Confirm azd environment outputs are populated
 azd env get-values | grep -E 'SERVICE_|API_BASE_URL|APPLICATIONINSIGHTS'
 
-# Check what the health endpoint returns
+# Check what the health endpoint returns (also reports env= for environment confirmation)
 curl -s https://<api-url>/health | jq .
 ```
 
@@ -285,12 +301,16 @@ curl -s https://<api-url>/health | jq .
 | Log message prefix | Meaning |
 |---|---|
 | `API initialised – env=…` | Startup completed; confirms telemetry on/off and environment |
+| `API listening on port …` | Process is bound and ready to accept traffic |
+| `Application Insights telemetry enabled` | App Insights transport added; traces will flow to Azure Monitor |
+| `Application Insights disabled — …` | Connection string missing; logs go to stdout only |
+| `Application Insights setup failed: …` | Bad connection string or SDK error; check the value in App Settings |
 | `Cosmos DB connected successfully!` | DB connection confirmed at startup |
 | `Cosmos DB connection error: …` | DB unreachable — check managed identity and endpoint |
 | `Fatal startup error: …` | Process crashed before listening; see full message for cause |
 | `[employees] GET /employees 500 – …` | 5xx from a CRUD route — error message included |
 | `[dashboard] GET /dashboard?date=… 500 – …` | Dashboard aggregation failure |
-| `APPLICATIONINSIGHTS_CONNECTION_STRING` warn | Telemetry disabled — check App Service app settings |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING is not set` warn | Telemetry disabled — check App Service app settings |
 
 ---
 
