@@ -12,6 +12,7 @@ import issues from "./routes/issues";
 import summaries from "./routes/summaries";
 import { configureCosmos } from "./models/cosmosClient";
 import { observability, logger } from "./config/observability";
+import { createAuthMiddleware } from "./middleware/auth";
 
 // Use API_ALLOW_ORIGINS env var with comma separated urls like
 // `http://localhost:3000, http://otherurl:100`
@@ -64,23 +65,28 @@ export const createApp = async (): Promise<Express> => {
         origin: originList()
     }));
 
-    // Dales Operations API routes — one router per domain collection.
-    app.use("/dashboard", dashboard);
-    app.use("/employees", employees);
-    app.use("/tasks", tasks);
-    app.use("/productivity", productivity);
-    app.use("/coaching", coaching);
-    app.use("/issues", issues);
-    app.use("/summaries", summaries);
-
-    // Health-check endpoint for deployment probes and smoke tests
+    // Health-check endpoint — no auth required; used by Azure deployment probes.
     app.get("/health", (_req, res) => {
         res.json({ status: "ok", timestamp: new Date().toISOString(), env: process.env.NODE_ENV ?? "production" });
     });
 
-    // Swagger UI for the OpenAPI spec
+    // Swagger UI — open without auth so the spec remains browsable for support/tooling.
+    // Business data is not exposed by the spec itself.
     const swaggerDocument = yaml.load("./openapi.yaml");
     app.use("/", swaggerUI.serve, swaggerUI.setup(swaggerDocument));
+
+    // Auth middleware — bypassed automatically when NODE_ENV !== "production".
+    // See src/api/src/middleware/auth.ts for behaviour details.
+    const requireAuth = createAuthMiddleware(config.auth);
+
+    // Dales Operations API routes — auth required on every business endpoint.
+    app.use("/dashboard", requireAuth, dashboard);
+    app.use("/employees", requireAuth, employees);
+    app.use("/tasks", requireAuth, tasks);
+    app.use("/productivity", requireAuth, productivity);
+    app.use("/coaching", requireAuth, coaching);
+    app.use("/issues", requireAuth, issues);
+    app.use("/summaries", requireAuth, summaries);
 
     return app;
 };

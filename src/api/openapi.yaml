@@ -6,7 +6,23 @@ info:
   contact:
     email: noreply@example.com
 
+# All business endpoints require a Bearer JWT from Azure Entra ID.
+# /health is open (no auth) for deployment probes.
+# In development/test (NODE_ENV ≠ production) the auth check is bypassed automatically.
+security:
+  - BearerAuth: []
+
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        Azure Entra ID Bearer JWT. Set AZURE_AD_TENANT_ID and AZURE_AD_CLIENT_ID
+        on the API App Service. Bypassed automatically when NODE_ENV is not "production"
+        (local dev and tests). See src/api/README.md for configuration details.
+
   schemas:
 
     # ── Error shape ─────────────────────────────────────────────────────────────
@@ -186,8 +202,79 @@ components:
           schema: { $ref: "#/components/schemas/ApiError" }
     NotFound:
       description: Resource not found.
+    InternalServerError:
+      description: An unexpected server error occurred.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ApiError" }
 
 paths:
+  # ---------- System ----------
+  /health:
+    get:
+      summary: Health check
+      description: Returns API health status. Used by Azure App Service deployment probes.
+      tags: [System]
+      security: []
+      responses:
+        "200":
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, timestamp, env]
+                properties:
+                  status:    { type: string, example: "ok" }
+                  timestamp: { type: string, format: date-time }
+                  env:       { type: string, example: "production" }
+
+  # ---------- Dashboard ----------
+  /dashboard:
+    get:
+      summary: Get shift-day dashboard summary
+      description: >
+        Returns aggregated counts and recent items for a single shift day.
+        All counts span the full dataset; urgentTasks and recentOpenIssues are
+        capped at 5 items each.
+      tags: [Dashboard]
+      parameters:
+        - name: date
+          in: query
+          description: Target date (YYYY-MM-DD). Defaults to today.
+          schema: { type: string, format: date, example: "2026-04-15" }
+      responses:
+        "200":
+          description: Dashboard summary counts
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [date, taskCounts, openIssuesCount, coachingFollowUpsDueCount, activeEmployeesCount]
+                properties:
+                  date:
+                    type: string
+                    format: date
+                    example: "2026-04-15"
+                  taskCounts:
+                    type: object
+                    required: [notStarted, inProgress, completed]
+                    properties:
+                      notStarted: { type: integer, minimum: 0 }
+                      inProgress: { type: integer, minimum: 0 }
+                      completed:  { type: integer, minimum: 0 }
+                  openIssuesCount:
+                    type: integer
+                    minimum: 0
+                  coachingFollowUpsDueCount:
+                    type: integer
+                    minimum: 0
+                  activeEmployeesCount:
+                    type: integer
+                    minimum: 0
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
   # ---------- Employees ----------
   /employees:
     get:

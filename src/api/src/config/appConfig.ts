@@ -8,7 +8,13 @@ export interface DatabaseConfig {
     databaseName: string
 }
 
+export interface AuthConfig {
+    tenantId: string
+    clientId: string
+}
+
 export interface AppConfig {
     observability: ObservabilityConfig
     database: DatabaseConfig
+    auth: AuthConfig
 }
