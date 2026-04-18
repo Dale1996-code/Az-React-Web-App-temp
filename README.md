@@ -252,6 +252,48 @@ azd env set APP_SERVICE_PLAN_SKU_NAME B1
 
 ## Troubleshooting
 
+### Where to look first after a failed deploy or live incident
+
+Use this checklist when something breaks in production. Work top to bottom — the first few checks catch the majority of issues.
+
+| Signal | Where to look | What to check |
+|---|---|---|
+| **API not responding / 503** | Azure Portal → App Service → **Log stream** | Container startup logs; look for `Fatal startup error` or `Cannot find module` |
+| **Cosmos DB connection failure** | Log stream or App Insights **Traces** | `Cosmos DB connection error` message at startup; confirm managed identity RBAC |
+| **API errors in production** | App Insights → **Failures** blade | 5xx traces include `[collection] METHOD /path 500 –` prefix + error message |
+| **Key Vault / config missing** | App Insights **Traces** → search `AZURE_KEY_VAULT_ENDPOINT` | Warning logged at startup if KV endpoint not set; secrets missing = config gaps |
+| **Health probe down** | `GET https://<api-url>/health` | Returns `{"status":"ok","timestamp":"..."}` when healthy; 503 = process crashed |
+| **Frontend errors** | App Insights → **Failures** (filter `cloud/roleName = webui`) | Browser exceptions, failed AJAX calls, page-load telemetry |
+| **Deployment failed** | GitHub Actions run → **Provision Infrastructure** or **Deploy** step | Quota errors, missing env vars, build failures |
+| **Telemetry missing entirely** | App Insights → **Live Metrics** | If no data flows, check `APPLICATIONINSIGHTS_CONNECTION_STRING` on the App Service |
+
+#### Useful CLI commands for quick triage
+
+```bash
+# Tail the API log stream live
+az webapp log tail --name <api-app-name> --resource-group <resource-group>
+
+# Confirm azd environment outputs are populated
+azd env get-values | grep -E 'SERVICE_|API_BASE_URL|APPLICATIONINSIGHTS'
+
+# Check what the health endpoint returns
+curl -s https://<api-url>/health | jq .
+```
+
+#### Log landmarks to search for in App Insights Traces
+
+| Log message prefix | Meaning |
+|---|---|
+| `API initialised – env=…` | Startup completed; confirms telemetry on/off and environment |
+| `Cosmos DB connected successfully!` | DB connection confirmed at startup |
+| `Cosmos DB connection error: …` | DB unreachable — check managed identity and endpoint |
+| `Fatal startup error: …` | Process crashed before listening; see full message for cause |
+| `[employees] GET /employees 500 – …` | 5xx from a CRUD route — error message included |
+| `[dashboard] GET /dashboard?date=… 500 – …` | Dashboard aggregation failure |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` warn | Telemetry disabled — check App Service app settings |
+
+---
+
 ### `azd provision` fails — quota or SKU not available
 
 **Symptom:** provision exits with `QuotaExceeded`, `SkuNotAvailable`, or `Conflict` on the App Service Plan.

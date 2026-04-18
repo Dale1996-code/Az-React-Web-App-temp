@@ -11,7 +11,7 @@ import coaching from "./routes/coaching";
 import issues from "./routes/issues";
 import summaries from "./routes/summaries";
 import { configureCosmos } from "./models/cosmosClient";
-import { observability } from "./config/observability";
+import { observability, logger } from "./config/observability";
 
 // Use API_ALLOW_ORIGINS env var with comma separated urls like
 // `http://localhost:3000, http://otherurl:100`
@@ -27,7 +27,7 @@ const environment = process.env.NODE_ENV;
 const originList = (): string[] | string => {
 
     if (environment && environment === "development") {
-        console.log(`Allowing requests from any origins. NODE_ENV=${environment}`);
+        logger.info(`CORS open to all origins (NODE_ENV=${environment})`);
         return "*";
     }
 
@@ -52,6 +52,11 @@ export const createApp = async (): Promise<Express> => {
     // Configuration
     observability(config.observability);
     await configureCosmos(config.database);
+
+    logger.info(
+        `API initialised – env=${process.env.NODE_ENV ?? "production"} ` +
+        `telemetry=${config.observability.connectionString ? "enabled" : "disabled"}`
+    );
 
     // Middleware
     app.use(express.json());
