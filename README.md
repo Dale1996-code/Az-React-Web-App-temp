@@ -371,6 +371,145 @@ If the SKU is not B1 or higher, re-provision with the correct tier (see [App Ser
 
 ---
 
+### Smoke tests pass route checks but fail on `GET /health` or "Shift Overview" not visible
+
+**Symptom:** Playwright route-shell tests pass (the SPA shell loads), but the API connectivity checks fail — `GET /health` returns non-200, or the "Shift Overview" section never appears on the dashboard.
+
+**What it means:** The "Shift Overview" section only renders after a successful `GET /dashboard` response; its absence means the API is reachable by the browser but returning an error. This is distinct from a CORS or URL misconfiguration — the request is reaching the API, but the API itself is unhealthy.
+
+**Common causes and fixes:**
+
+1. **Cosmos DB role assignment not yet propagated** — The managed identity RBAC assignment in `cosmos-role-assignment.bicep` can take 1–3 minutes after `azd provision` finishes. The API starts before the role is active and every Cosmos call returns 403. Check API logs:
+   ```bash
+   az webapp log tail --name <api-app-name> --resource-group <resource-group>
+   ```
+   Look for `403 Forbidden` from Cosmos. Wait a few minutes, then re-run the smoke tests or hit `/health` manually.
+
+2. **`dist/` missing from the deployed package** — If the API `prepackage` hook failed silently (e.g., TypeScript compile error), App Service starts but `node .` immediately crashes. Logs will show `Cannot find module './dist/index'`. Re-run `azd deploy` after confirming `./preflight.sh` passes locally.
+
+3. **Key Vault unreachable at startup** — The API loads Key Vault secrets before accepting requests (`src/config/index.ts`). If the managed identity access policy was not applied yet, startup will log `Access denied` from Key Vault and the process will crash or hang. Same fix as #1 — wait for IAM propagation and restart the App Service.
+
+---
+
+### CORS errors after re-provision with a new environment name or region
+
+**Symptom:** the frontend loads, `VITE_API_BASE_URL` is correctly set (no `http://undefined`), but the browser console shows `Access-Control-Allow-Origin` errors on API calls.
+
+**Cause:** the API's allowed origins are baked in at provision time. In `infra/main.bicep`, `API_ALLOW_ORIGINS` and `allowedOrigins` are both set to `web.outputs.SERVICE_WEB_URI`. If you provisioned a second environment with a different name or region, the web app gets a new hostname but the API's app settings still list the old hostname.
+
+**Fix:** re-run `azd provision` for the environment where the mismatch occurred. Bicep is idempotent — it will update `API_ALLOW_ORIGINS` and the App Service CORS headers to match the current web app URL without touching data:
+
+```bash
+azd provision --no-prompt
+```
+
+Confirm the setting was updated:
+
+```bash
+az webapp config appsettings list \
+  --name <api-app-name> \
+  --resource-group <resource-group> \
+  --query "[?name=='API_ALLOW_ORIGINS'].value" --output tsv
+```
+
+---
+
+### `azd provision` fails mid-way — partially-provisioned resources
+
+**Symptom:** `azd provision` exits with an error after some resources were created (e.g., Cosmos DB succeeded but App Service Plan failed). Re-running immediately fails again on the same resource.
+
+**What not to do:** do not run `azd down` to recover — that deletes all provisioned resources including Cosmos DB data.
+
+**Fix:** Bicep deployments are idempotent. Re-running `azd provision` after fixing the root cause (usually a quota limit, see above) is safe and will pick up where it left off:
+
+```bash
+azd provision --no-prompt
+```
+
+If provision keeps failing on a specific module, inspect the ARM deployment errors directly:
+
+```bash
+az deployment group list \
+  --resource-group <resource-group> \
+  --query "[].{name:name, state:properties.provisioningState}" \
+  --output table
+```
+
+---
+
+## Rollback and Recovery
+
+This repo has no database migrations, no deployment slots (B1 tier), and no connection strings — which keeps rollback straightforward. The recovery path depends on what broke.
+
+### Bad code deploy — app broke after `azd deploy`
+
+The fastest recovery is to redeploy from the last known-good commit. The `prepackage` hooks rebuild both services from source, so checking out an older commit and re-deploying is sufficient:
+
+```bash
+git checkout <last-good-commit-sha>
+azd deploy --no-prompt
+```
+
+Cosmos DB data is **not** affected by a code-only redeploy — there are no migration steps in this codebase. After the deploy, run the smoke tests to confirm:
+
+```bash
+cd tests
+AZD_ENV=$(azd env get-values)
+WEB_URL=$(echo "$AZD_ENV" | grep '^SERVICE_WEB_URI=' | cut -d'=' -f2- | tr -d '"')
+API_URL=$(echo "$AZD_ENV" | grep '^SERVICE_API_URI=' | cut -d'=' -f2- | tr -d '"')
+REACT_APP_WEB_BASE_URL="$WEB_URL" REACT_APP_API_BASE_URL="$API_URL" npx playwright test
+```
+
+### Broken infrastructure change — `azd provision` left things in a bad state
+
+Fix the Bicep under `infra/` and re-run `azd provision`. Bicep is idempotent — only the delta is applied. Cosmos DB data and Key Vault secrets survive a re-provision unchanged:
+
+```bash
+azd provision --no-prompt
+# then redeploy code so app settings propagate correctly
+azd deploy --no-prompt
+```
+
+### Full teardown and fresh start (last resort)
+
+Only use `azd down` if you cannot recover through re-provision. **This deletes the resource group and all Cosmos DB data:**
+
+```bash
+azd down --force --purge   # --purge also removes the soft-deleted Key Vault
+azd up                     # re-provision + re-deploy from scratch
+```
+
+### No deployment slots on B1
+
+B1 (Basic) tier does not support deployment slots, so there is no slot-swap rollback path. If zero-downtime rollback via slots is required, upgrade to Standard tier first:
+
+```bash
+azd env set APP_SERVICE_PLAN_SKU_NAME S1
+azd provision
+```
+
+Then configure a staging slot in the App Service portal. Without slots, a rollback is a re-deploy — which takes ~2 minutes for `azd deploy`.
+
+### Confirming recovery
+
+After any recovery action, verify end-to-end health:
+
+```bash
+# Check both service URLs are present
+azd env get-values | grep -E 'SERVICE_(WEB|API)_URI'
+
+# Hit the health endpoint directly
+API_URL=$(azd env get-values | grep '^SERVICE_API_URI=' | cut -d'=' -f2- | tr -d '"')
+curl -s "$API_URL/health"   # expect: {"status":"ok","timestamp":"..."}
+
+# Run the full smoke suite
+cd tests && npx playwright test \
+  --env REACT_APP_WEB_BASE_URL="..." \
+  --env REACT_APP_API_BASE_URL="..."
+```
+
+---
+
 ## Security
 
 A [managed identity](https://docs.microsoft.com/azure/active-directory/managed-identities-azure-resources/overview) is created for the API and used to authenticate with Cosmos DB (RBAC) and Key Vault. No connection strings are used at runtime — the API authenticates via `DefaultAzureCredential`.
