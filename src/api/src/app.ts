@@ -75,7 +75,7 @@ export const createApp = async (): Promise<Express> => {
 
     // Health-check endpoint for deployment probes and smoke tests
     app.get("/health", (_req, res) => {
-        res.json({ status: "ok", timestamp: new Date().toISOString() });
+        res.json({ status: "ok", timestamp: new Date().toISOString(), env: process.env.NODE_ENV ?? "production" });
     });
 
     // Swagger UI for the OpenAPI spec
