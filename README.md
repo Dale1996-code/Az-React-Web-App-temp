@@ -206,7 +206,36 @@ See service-level READMEs for more detail:
 
 ## API Spec
 
-The OpenAPI spec lives at [`src/api/openapi.yaml`](src/api/openapi.yaml). The root [`openapi.yaml`](openapi.yaml) mirrors that spec for tooling discovery.
+**Source of truth**: [`src/api/openapi.yaml`](src/api/openapi.yaml). Edit this file when changing the API surface.
+
+The root [`openapi.yaml`](openapi.yaml) is a checked-in copy kept for tooling discovery (IDE plugins, API explorers). It must always be an exact copy of the API spec:
+
+```bash
+# After editing src/api/openapi.yaml:
+cp src/api/openapi.yaml openapi.yaml
+git add openapi.yaml
+```
+
+CI enforces this: the "Verify OpenAPI spec sync" step diffs the two files and fails the build if they diverge.
+
+## Authentication
+
+All business API endpoints (`/employees`, `/tasks`, `/dashboard`, etc.) require an Azure Entra ID Bearer JWT in the `Authorization: Bearer <token>` header.
+
+**In production** (`NODE_ENV=production`): two App Service settings must be configured:
+
+| Setting | Where to find it |
+|---|---|
+| `AZURE_AD_TENANT_ID` | Azure Portal → Entra ID → Overview → Tenant ID |
+| `AZURE_AD_CLIENT_ID` | Azure Portal → Entra ID → App registrations → your API app → Application (client) ID |
+
+The API will refuse to start in production if either value is missing.
+
+**In local development** (`NODE_ENV=development` or `test`): auth is bypassed automatically with a startup warning. No Azure AD credentials are needed locally.
+
+The `/health` endpoint is always open (no auth) — it is used by Azure App Service deployment probes.
+
+> The React frontend will need MSAL wired in to acquire tokens before it can call the API in a production deployment. Until that is done, the API is accessible only from contexts that can obtain an Entra ID token directly (e.g., server-side scripts, Postman with a bearer token). See [`src/api/README.md`](src/api/README.md) for configuration details.
 
 ## App Service Plan SKU and Cost
 
@@ -311,6 +340,9 @@ curl -s https://<api-url>/health | jq .
 | `[employees] GET /employees 500 – …` | 5xx from a CRUD route — error message included |
 | `[dashboard] GET /dashboard?date=… 500 – …` | Dashboard aggregation failure |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING is not set` warn | Telemetry disabled — check App Service app settings |
+| `Auth: Azure Entra ID JWT enforcement enabled (tenant=…)` | Auth middleware active in production |
+| `Auth: enforcement disabled — all requests allowed…` | Auth bypassed — expected in dev/test, unexpected in production |
+| `Auth: token rejected – …` | 401 issued; message explains why (expired, bad aud, etc.) |
 
 ---
 

@@ -1,4 +1,4 @@
-import { AppConfig, DatabaseConfig, ObservabilityConfig } from "./appConfig";
+import { AppConfig, AuthConfig, DatabaseConfig, ObservabilityConfig } from "./appConfig";
 import dotenv from "dotenv";
 import { DefaultAzureCredential } from "@azure/identity";
 import { SecretClient } from "@azure/keyvault-secrets";
@@ -28,6 +28,10 @@ export const getConfig: () => Promise<AppConfig> = async () => {
             endpoint: databaseConfig.endpoint,
             databaseName: databaseConfig.databaseName,
         },
+        auth: {
+            tenantId: process.env.AZURE_AD_TENANT_ID ?? "",
+            clientId: process.env.AZURE_AD_CLIENT_ID ?? "",
+        },
     };
 
     validateConfig(appConfig);
@@ -48,6 +52,20 @@ export const getConfig: () => Promise<AppConfig> = async () => {
 const validateConfig = (config: AppConfig): void => {
     const isProduction = process.env.NODE_ENV === "production";
     const errors: string[] = [];
+
+    // Auth config — required in production, optional elsewhere (bypassed automatically).
+    if (isProduction && !config.auth.tenantId) {
+        errors.push(
+            "AZURE_AD_TENANT_ID must be set in production. " +
+            "Find it in Azure Portal > Entra ID > Overview > Tenant ID."
+        );
+    }
+    if (isProduction && !config.auth.clientId) {
+        errors.push(
+            "AZURE_AD_CLIENT_ID must be set in production. " +
+            "This is the Application (client) ID of the App Registration that represents the API."
+        );
+    }
 
     // AZURE_COSMOS_ENDPOINT — without this every DB call fails with a cryptic SDK error.
     if (!config.database.endpoint) {

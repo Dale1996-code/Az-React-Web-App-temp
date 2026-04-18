@@ -64,6 +64,19 @@ jobs:
         with:
           node-version: 22
 
+      - name: Verify OpenAPI spec sync
+        # src/api/openapi.yaml is the source of truth.
+        # The root openapi.yaml must be an exact copy (kept for tooling discovery).
+        # To fix a failure here: cp src/api/openapi.yaml openapi.yaml && git commit
+        run: |
+          if ! diff src/api/openapi.yaml openapi.yaml > /dev/null 2>&1; then
+            echo "::error::openapi.yaml (root) is out of sync with src/api/openapi.yaml (source of truth)."
+            echo "Run: cp src/api/openapi.yaml openapi.yaml && git add openapi.yaml && git commit -m 'chore: sync root openapi.yaml'"
+            diff src/api/openapi.yaml openapi.yaml || true
+            exit 1
+          fi
+          echo "OpenAPI spec sync check passed."
+
       - name: Install API dependencies and run tests
         run: |
           cd src/api
