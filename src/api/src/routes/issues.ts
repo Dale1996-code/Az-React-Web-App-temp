@@ -1,5 +1,5 @@
 import { createCrudRouter } from "./createCrudRouter";
-import { BaseRepository } from "../models/baseRepository";
+import { BaseRepository, FilterCondition } from "../models/baseRepository";
 import { IssueLog } from "../models/issue";
 import { getContainer } from "../models/cosmosClient";
 import { validateIssue } from "../validation";
@@ -9,31 +9,29 @@ export default createCrudRouter<IssueLog>(
     () => new BaseRepository<IssueLog>(getContainer("issues")),
     "issues",
     validateIssue,
-    (items, query) => {
-        let result = items;
+    (query) => {
+        const conditions: FilterCondition[] = [];
 
-        // ?date=YYYY-MM-DD (exact match on storeDate)
+        // ?date=YYYY-MM-DD  (exact match on storeDate)
         if (query.date) {
-            result = result.filter(i => i.storeDate === query.date);
+            conditions.push({ op: "eq", field: "storeDate", value: query.date });
         }
 
         // ?status=open|resolved
         if (query.status) {
-            result = result.filter(i => i.status === query.status);
+            conditions.push({ op: "eq", field: "status", value: query.status });
         }
 
-        // ?department=<string> (case-insensitive)
+        // ?department=<string>  (case-insensitive)
         if (query.department) {
-            const dept = query.department.toLowerCase();
-            result = result.filter(i => i.department.toLowerCase() === dept);
+            conditions.push({ op: "eq_ci", field: "department", value: query.department });
         }
 
-        // ?category=<string> (case-insensitive)
+        // ?category=<string>  (case-insensitive)
         if (query.category) {
-            const cat = query.category.toLowerCase();
-            result = result.filter(i => i.category.toLowerCase() === cat);
+            conditions.push({ op: "eq_ci", field: "category", value: query.category });
         }
 
-        return result;
+        return { conditions };
     },
 );

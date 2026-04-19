@@ -1,5 +1,5 @@
 import { createCrudRouter } from "./createCrudRouter";
-import { BaseRepository } from "../models/baseRepository";
+import { BaseRepository, FilterCondition } from "../models/baseRepository";
 import { Task } from "../models/task";
 import { getContainer } from "../models/cosmosClient";
 import { validateTask } from "../validation";
@@ -9,25 +9,24 @@ export default createCrudRouter<Task>(
     () => new BaseRepository<Task>(getContainer("tasks")),
     "tasks",
     validateTask,
-    (items, query) => {
-        let result = items;
+    (query) => {
+        const conditions: FilterCondition[] = [];
 
         // ?status=notStarted|inProgress|completed
         if (query.status) {
-            result = result.filter(t => t.status === query.status);
+            conditions.push({ op: "eq", field: "status", value: query.status });
         }
 
         // ?date=YYYY-MM-DD  (exact match on storeDate)
         if (query.date) {
-            result = result.filter(t => t.storeDate === query.date);
+            conditions.push({ op: "eq", field: "storeDate", value: query.date });
         }
 
         // ?department=<name>  (case-insensitive exact match)
         if (query.department) {
-            const dept = query.department.toLowerCase();
-            result = result.filter(t => t.department.toLowerCase() === dept);
+            conditions.push({ op: "eq_ci", field: "department", value: query.department });
         }
 
-        return result;
+        return { conditions };
     },
 );
