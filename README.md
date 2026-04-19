@@ -198,6 +198,13 @@ Run API integration tests (no database required — uses in-memory mock):
 cd src/api && npm test
 ```
 
+Run web frontend unit tests (vitest + jsdom, no browser required):
+
+```bash
+cd src/web && npm test          # single run
+cd src/web && npm run test:watch # watch mode during development
+```
+
 See service-level READMEs for more detail:
 
 - [`src/api/README.md`](src/api/README.md) — API setup and endpoints

@@ -1,18 +1,12 @@
 import { FC, ReactElement, useCallback, useEffect, useRef, useState } from 'react';
 import {
     DefaultButton,
-    Dialog,
-    DialogFooter,
-    DialogType,
     Dropdown,
     IDropdownOption,
     MessageBar,
     MessageBarType,
     Panel,
     PanelType,
-    PrimaryButton,
-    Spinner,
-    SpinnerSize,
     Stack,
     Text,
     TextField,
@@ -20,8 +14,13 @@ import {
 import { stackGaps, stackItemPadding, stackPadding } from '../ux/styles';
 import { Task, TaskFormData, TaskPriority, TaskStatus, TasksQuery } from '../models/task';
 import { createTask, deleteTask, getTasks, updateTask } from '../services/tasksService';
-import { Employee } from '../models/employee';
-import { getEmployees } from '../services/employeesService';
+import { useCrudPanel } from '../hooks/useCrudPanel';
+import { useEmployees } from '../hooks/useEmployees';
+import { todayISO, ISO_DATE_RE } from '../utils/dateUtils';
+import ListState from '../components/ListState';
+import PanelFooter from '../components/PanelFooter';
+import DeleteDialog from '../components/DeleteDialog';
+import ErrorBar from '../components/ErrorBar';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -60,10 +59,6 @@ const PRIORITY_LABELS: Record<TaskPriority, string> = {
     high:   'High',
 };
 
-function todayISO(): string {
-    return new Date().toISOString().split('T')[0];
-}
-
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 type TaskFormState = {
@@ -96,19 +91,20 @@ const emptyForm = (date?: string): TaskFormState => ({
 
 type TaskRowProps = {
     task: Task;
-    employeeMap: Map<string, Employee>;
+    employeeNameMap: Map<string, string>;
     onEdit: (task: Task) => void;
     onDelete: (task: Task) => void;
 };
 
-const TaskRow: FC<TaskRowProps> = ({ task, employeeMap, onEdit, onDelete }): ReactElement => {
-    const assignee = task.assignedEmployeeId ? employeeMap.get(task.assignedEmployeeId) : undefined;
-    const assigneeName = assignee ? `${assignee.firstName} ${assignee.lastName}` : undefined;
+const TaskRow: FC<TaskRowProps> = ({ task, employeeNameMap, onEdit, onDelete }): ReactElement => {
+    const assigneeName = task.assignedEmployeeId
+        ? employeeNameMap.get(task.assignedEmployeeId)
+        : undefined;
 
     const meta: string[] = [task.department];
-    if (assigneeName)   meta.push(assigneeName);
-    if (task.priority)  meta.push(PRIORITY_LABELS[task.priority]);
-    if (task.dueTime)   meta.push(task.dueTime);
+    if (assigneeName)  meta.push(assigneeName);
+    if (task.priority) meta.push(PRIORITY_LABELS[task.priority]);
+    if (task.dueTime)  meta.push(task.dueTime);
 
     return (
         <Stack
@@ -196,17 +192,14 @@ type TaskFormProps = {
     form: TaskFormState;
     onChange: (updates: Partial<TaskFormState>) => void;
     errors: Partial<Record<keyof TaskFormState, string>>;
-    employees: Employee[];
+    employeeOptions: IDropdownOption[];
     loadingEmployees: boolean;
 };
 
-const TaskForm: FC<TaskFormProps> = ({ form, onChange, errors, employees, loadingEmployees }): ReactElement => {
-    const employeeOptions: IDropdownOption[] = [
+const TaskForm: FC<TaskFormProps> = ({ form, onChange, errors, employeeOptions, loadingEmployees }): ReactElement => {
+    const allEmployeeOptions: IDropdownOption[] = [
         { key: '', text: 'Unassigned' },
-        ...employees.map(e => ({
-            key: e.id,
-            text: `${e.firstName} ${e.lastName}${e.department ? ` (${e.department})` : ''}`,
-        })),
+        ...employeeOptions,
     ];
 
     return (
@@ -276,7 +269,7 @@ const TaskForm: FC<TaskFormProps> = ({ form, onChange, errors, employees, loadin
             <Dropdown
                 label="Assign to"
                 placeholder={loadingEmployees ? 'Loading employees…' : 'Unassigned'}
-                options={employeeOptions}
+                options={allEmployeeOptions}
                 selectedKey={form.assignedEmployeeId || ''}
                 onChange={(_, opt) => onChange({ assignedEmployeeId: (opt?.key as string) ?? '' })}
                 disabled={loadingEmployees}
@@ -321,29 +314,31 @@ const TasksPage: FC = (): ReactElement => {
     const [loading, setLoading] = useState(true);
     const [listError, setListError] = useState<string | null>(null);
 
-    // Employees for assignment dropdown and display
-    const [employees, setEmployees] = useState<Employee[]>([]);
-    const [employeeMap, setEmployeeMap] = useState<Map<string, Employee>>(new Map());
-    const [loadingEmployees, setLoadingEmployees] = useState(false);
-
     // Filters
     const [filterDate, setFilterDate] = useState(todayISO());
     const [filterStatus, setFilterStatus] = useState<TaskStatus | ''>('');
     const [filterDept, setFilterDept] = useState('');
     const deptTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // Panel (create / edit)
-    const [panelOpen, setPanelOpen] = useState(false);
-    const [editing, setEditing] = useState<Task | null>(null);
-    const [form, setForm] = useState<TaskFormState>(emptyForm());
-    const [formErrors, setFormErrors] = useState<Partial<Record<keyof TaskFormState, string>>>({});
-    const [saving, setSaving] = useState(false);
-    const [saveError, setSaveError] = useState<string | null>(null);
+    const { employees, employeeOptions, loadingEmployees } = useEmployees();
 
-    // Delete dialog
-    const [deleteTarget, setDeleteTarget] = useState<Task | null>(null);
-    const [deleting, setDeleting] = useState(false);
-    const [deleteError, setDeleteError] = useState<string | null>(null);
+    // Build a name-only map for the row display (avoids passing full Employee objects)
+    const employeeNameMap = new Map<string, string>(
+        employees.map(e => [e.id, `${e.firstName} ${e.lastName}`])
+    );
+
+    const {
+        panelOpen, setPanelOpen,
+        editing,
+        form,
+        formErrors, setFormErrors,
+        saving, setSaving,
+        saveError, setSaveError,
+        deleteTarget, setDeleteTarget,
+        deleting, setDeleting,
+        deleteError, setDeleteError,
+        openCreate, openEdit, closePanel, updateForm,
+    } = useCrudPanel<Task, TaskFormState>(emptyForm());
 
     // ── Data loading ───────────────────────────────────────────────────────────
 
@@ -360,7 +355,6 @@ const TasksPage: FC = (): ReactElement => {
         }
     }, []);
 
-    // Build query from the current filter state
     const currentQuery = useCallback(
         (overrides: Partial<TasksQuery> = {}): TasksQuery => {
             const q: TasksQuery = {};
@@ -372,30 +366,8 @@ const TasksPage: FC = (): ReactElement => {
         [filterDate, filterStatus, filterDept],
     );
 
-    // Runs on mount (initial load) and whenever the status dropdown changes.
-    // Date and department filters trigger load() directly in their own handlers.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => { load(currentQuery()); }, [filterStatus]);
-
-    // Load active employees for the assignment dropdown
-    const loadEmployees = useCallback(async () => {
-        setLoadingEmployees(true);
-        try {
-            const data = await getEmployees({ active: true });
-            setEmployees(data);
-            const map = new Map<string, Employee>();
-            data.forEach(e => map.set(e.id, e));
-            setEmployeeMap(map);
-        } catch {
-            // non-fatal — assignment dropdown stays empty
-        } finally {
-            setLoadingEmployees(false);
-        }
-    }, []);
-
-    useEffect(() => {
-        loadEmployees();
-    }, [loadEmployees]);
 
     // ── Filter handlers ────────────────────────────────────────────────────────
 
@@ -426,17 +398,8 @@ const TasksPage: FC = (): ReactElement => {
 
     // ── Panel helpers ──────────────────────────────────────────────────────────
 
-    const openCreate = () => {
-        setEditing(null);
-        setForm(emptyForm(filterDate || todayISO()));
-        setFormErrors({});
-        setSaveError(null);
-        setPanelOpen(true);
-    };
-
-    const openEdit = (task: Task) => {
-        setEditing(task);
-        setForm({
+    const handleOpenEdit = (task: Task) => {
+        openEdit(task, {
             title:              task.title,
             status:             task.status,
             storeDate:          task.storeDate,
@@ -448,35 +411,20 @@ const TasksPage: FC = (): ReactElement => {
             notes:              task.notes ?? '',
             completedAt:        task.completedAt ?? '',
         });
-        setFormErrors({});
-        setSaveError(null);
-        setPanelOpen(true);
-    };
-
-    const closePanel = () => {
-        if (saving) return;
-        setPanelOpen(false);
-    };
-
-    const updateForm = (updates: Partial<TaskFormState>) => {
-        setForm(prev => ({ ...prev, ...updates }));
-        const cleared = { ...formErrors };
-        (Object.keys(updates) as (keyof TaskFormState)[]).forEach(k => delete cleared[k]);
-        setFormErrors(cleared);
     };
 
     // ── Client-side validation ─────────────────────────────────────────────────
 
     const validateForm = (): boolean => {
         const errs: Partial<Record<keyof TaskFormState, string>> = {};
-        if (!form.title.trim())          errs.title      = 'Title is required.';
-        if (!form.status)                errs.status     = 'Status is required.';
-        if (!form.storeDate.trim())      errs.storeDate  = 'Date is required (YYYY-MM-DD).';
-        else if (!/^\d{4}-\d{2}-\d{2}$/.test(form.storeDate.trim()))
-                                         errs.storeDate  = 'Date must be YYYY-MM-DD.';
-        if (!form.department.trim())     errs.department = 'Department is required.';
+        if (!form.title.trim())      errs.title      = 'Title is required.';
+        if (!form.status)            errs.status     = 'Status is required.';
+        if (!form.storeDate.trim())  errs.storeDate  = 'Date is required (YYYY-MM-DD).';
+        else if (!ISO_DATE_RE.test(form.storeDate.trim()))
+                                     errs.storeDate  = 'Date must be YYYY-MM-DD.';
+        if (!form.department.trim()) errs.department = 'Department is required.';
         if (form.dueTime.trim() && !/^\d{2}:\d{2}$/.test(form.dueTime.trim()))
-                                         errs.dueTime    = 'Due time must be HH:MM.';
+                                     errs.dueTime    = 'Due time must be HH:MM.';
         setFormErrors(errs);
         return Object.keys(errs).length === 0;
     };
@@ -491,17 +439,15 @@ const TasksPage: FC = (): ReactElement => {
 
         const isCompleted = form.status === 'completed';
         const payload: TaskFormData = {
-            title:               form.title.trim(),
-            status:              form.status as TaskStatus,
-            storeDate:           form.storeDate.trim(),
-            department:          form.department.trim(),
-            // Always send assignedEmployeeId so that clearing (null) is persisted on update
-            assignedEmployeeId:  form.assignedEmployeeId || null,
-            ...(form.description.trim()               && { description: form.description.trim() }),
-            ...(form.priority                         && { priority:    form.priority as TaskPriority }),
-            ...(form.dueTime.trim()                   && { dueTime:     form.dueTime.trim() }),
-            ...(form.notes.trim()                     && { notes:       form.notes.trim() }),
-            // Only send completedAt when the task is actually completed
+            title:              form.title.trim(),
+            status:             form.status as TaskStatus,
+            storeDate:          form.storeDate.trim(),
+            department:         form.department.trim(),
+            assignedEmployeeId: form.assignedEmployeeId || null,
+            ...(form.description.trim()                && { description: form.description.trim() }),
+            ...(form.priority                          && { priority:    form.priority as TaskPriority }),
+            ...(form.dueTime.trim()                    && { dueTime:     form.dueTime.trim() }),
+            ...(form.notes.trim()                      && { notes:       form.notes.trim() }),
             ...(isCompleted && form.completedAt.trim() && { completedAt: form.completedAt.trim() }),
         };
 
@@ -552,10 +498,11 @@ const TasksPage: FC = (): ReactElement => {
                         </Text>
                     </Stack.Item>
                     <Stack.Item>
-                        <PrimaryButton
+                        <DefaultButton
                             text="New Task"
                             iconProps={{ iconName: 'Add' }}
-                            onClick={openCreate}
+                            onClick={() => openCreate(emptyForm(filterDate || todayISO()))}
+                            primary
                         />
                     </Stack.Item>
                 </Stack>
@@ -602,51 +549,39 @@ const TasksPage: FC = (): ReactElement => {
             {/* List error */}
             {listError && (
                 <Stack.Item tokens={stackItemPadding}>
-                    <MessageBar
-                        messageBarType={MessageBarType.error}
-                        onDismiss={() => setListError(null)}
-                        dismissButtonAriaLabel="Dismiss"
-                    >
-                        {listError}
-                    </MessageBar>
+                    <ErrorBar message={listError} onDismiss={() => setListError(null)} />
                 </Stack.Item>
             )}
 
             {/* Task list */}
             <Stack.Item tokens={stackItemPadding}>
-                {loading ? (
-                    <Stack horizontalAlign="center" style={{ padding: 40 }}>
-                        <Spinner size={SpinnerSize.large} label="Loading tasks…" />
-                    </Stack>
-                ) : tasks.length === 0 ? (
-                    <Stack
-                        horizontalAlign="center"
-                        style={{ padding: 40, border: '1px dashed #c8c6c4', borderRadius: 4 }}
-                    >
-                        <Text variant="large" style={{ color: '#605e5c', marginBottom: 8 }}>
-                            No tasks for these filters.
-                        </Text>
-                        <DefaultButton
-                            text="Create a task"
-                            iconProps={{ iconName: 'Add' }}
-                            onClick={openCreate}
-                        />
-                    </Stack>
-                ) : (
-                    <Stack
-                        styles={{ root: { border: '1px solid #edebe9', borderRadius: 4, overflow: 'hidden' } }}
-                    >
-                        {tasks.map(task => (
-                            <TaskRow
-                                key={task.id}
-                                task={task}
-                                employeeMap={employeeMap}
-                                onEdit={openEdit}
-                                onDelete={setDeleteTarget}
+                <ListState
+                    loading={loading}
+                    loadingLabel="Loading tasks…"
+                    empty={tasks.length === 0}
+                    emptyContent={
+                        <>
+                            <Text variant="large" style={{ color: '#605e5c', marginBottom: 8 }}>
+                                No tasks for these filters.
+                            </Text>
+                            <DefaultButton
+                                text="Create a task"
+                                iconProps={{ iconName: 'Add' }}
+                                onClick={() => openCreate(emptyForm(filterDate || todayISO()))}
                             />
-                        ))}
-                    </Stack>
-                )}
+                        </>
+                    }
+                >
+                    {tasks.map(task => (
+                        <TaskRow
+                            key={task.id}
+                            task={task}
+                            employeeNameMap={employeeNameMap}
+                            onEdit={handleOpenEdit}
+                            onDelete={setDeleteTarget}
+                        />
+                    ))}
+                </ListState>
             </Stack.Item>
 
             {/* Task count */}
@@ -665,14 +600,7 @@ const TasksPage: FC = (): ReactElement => {
                 type={PanelType.smallFixedFar}
                 headerText={editing ? 'Edit Task' : 'New Task'}
                 onRenderFooterContent={() => (
-                    <Stack horizontal tokens={{ childrenGap: 8 }} style={{ padding: '16px 0' }}>
-                        <PrimaryButton
-                            text={saving ? 'Saving…' : 'Save'}
-                            onClick={handleSave}
-                            disabled={saving}
-                        />
-                        <DefaultButton text="Cancel" onClick={closePanel} disabled={saving} />
-                    </Stack>
+                    <PanelFooter saving={saving} onSave={handleSave} onCancel={closePanel} />
                 )}
                 isFooterAtBottom
             >
@@ -690,47 +618,22 @@ const TasksPage: FC = (): ReactElement => {
                         form={form}
                         onChange={updateForm}
                         errors={formErrors}
-                        employees={employees}
+                        employeeOptions={employeeOptions}
                         loadingEmployees={loadingEmployees}
                     />
                 </Stack>
             </Panel>
 
             {/* Delete confirmation dialog */}
-            <Dialog
+            <DeleteDialog
                 hidden={!deleteTarget}
-                onDismiss={() => !deleting && setDeleteTarget(null)}
-                dialogContentProps={{
-                    type: DialogType.normal,
-                    title: 'Remove task',
-                    subText: deleteTarget
-                        ? `Remove "${deleteTarget.title}"? This cannot be undone.`
-                        : '',
-                }}
-                modalProps={{ isBlocking: true }}
-            >
-                {deleteError && (
-                    <MessageBar
-                        messageBarType={MessageBarType.error}
-                        styles={{ root: { marginBottom: 8 } }}
-                    >
-                        {deleteError}
-                    </MessageBar>
-                )}
-                <DialogFooter>
-                    <PrimaryButton
-                        text={deleting ? 'Removing…' : 'Remove'}
-                        onClick={handleDeleteConfirm}
-                        disabled={deleting}
-                        styles={{ root: { background: '#a4262c', borderColor: '#a4262c' } }}
-                    />
-                    <DefaultButton
-                        text="Cancel"
-                        onClick={() => setDeleteTarget(null)}
-                        disabled={deleting}
-                    />
-                </DialogFooter>
-            </Dialog>
+                title="Remove task"
+                subText={deleteTarget ? `Remove "${deleteTarget.title}"? This cannot be undone.` : ''}
+                deleting={deleting}
+                deleteError={deleteError}
+                onConfirm={handleDeleteConfirm}
+                onDismiss={() => { if (!deleting) setDeleteTarget(null); }}
+            />
         </Stack>
     );
 };

@@ -1,17 +1,11 @@
 import { FC, ReactElement, useCallback, useEffect, useRef, useState } from 'react';
 import {
     DefaultButton,
-    Dialog,
-    DialogFooter,
-    DialogType,
     Label,
     MessageBar,
     MessageBarType,
     Panel,
     PanelType,
-    PrimaryButton,
-    Spinner,
-    SpinnerSize,
     Stack,
     Text,
     TextField,
@@ -25,6 +19,11 @@ import {
     getEmployees,
     updateEmployee,
 } from '../services/employeesService';
+import { useCrudPanel } from '../hooks/useCrudPanel';
+import ListState from '../components/ListState';
+import PanelFooter from '../components/PanelFooter';
+import DeleteDialog from '../components/DeleteDialog';
+import ErrorBar from '../components/ErrorBar';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -218,22 +217,21 @@ const EmployeesPage: FC = (): ReactElement => {
     const [loading, setLoading] = useState(true);
     const [listError, setListError] = useState<string | null>(null);
 
-    // Search / filter
     const [search, setSearch] = useState('');
     const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // Panel state
-    const [panelOpen, setPanelOpen] = useState(false);
-    const [editing, setEditing] = useState<Employee | null>(null);
-    const [form, setForm] = useState<FormState>(emptyForm());
-    const [formErrors, setFormErrors] = useState<Partial<Record<keyof FormState, string>>>({});
-    const [saving, setSaving] = useState(false);
-    const [saveError, setSaveError] = useState<string | null>(null);
-
-    // Delete dialog
-    const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null);
-    const [deleting, setDeleting] = useState(false);
-    const [deleteError, setDeleteError] = useState<string | null>(null);
+    const {
+        panelOpen, setPanelOpen,
+        editing,
+        form,
+        formErrors, setFormErrors,
+        saving, setSaving,
+        saveError, setSaveError,
+        deleteTarget, setDeleteTarget,
+        deleting, setDeleting,
+        deleteError, setDeleteError,
+        openCreate, openEdit, closePanel, updateForm,
+    } = useCrudPanel<Employee, FormState>(emptyForm());
 
     // ── Load employees ─────────────────────────────────────────────────────────
 
@@ -265,17 +263,8 @@ const EmployeesPage: FC = (): ReactElement => {
 
     // ── Panel helpers ──────────────────────────────────────────────────────────
 
-    const openCreate = () => {
-        setEditing(null);
-        setForm(emptyForm());
-        setFormErrors({});
-        setSaveError(null);
-        setPanelOpen(true);
-    };
-
-    const openEdit = (employee: Employee) => {
-        setEditing(employee);
-        setForm({
+    const handleOpenEdit = (employee: Employee) => {
+        openEdit(employee, {
             firstName: employee.firstName,
             lastName: employee.lastName,
             role: employee.role,
@@ -284,21 +273,6 @@ const EmployeesPage: FC = (): ReactElement => {
             employeeCode: employee.employeeCode ?? '',
             notes: employee.notes ?? '',
         });
-        setFormErrors({});
-        setSaveError(null);
-        setPanelOpen(true);
-    };
-
-    const closePanel = () => {
-        if (saving) return;
-        setPanelOpen(false);
-    };
-
-    const updateForm = (updates: Partial<FormState>) => {
-        setForm(prev => ({ ...prev, ...updates }));
-        const clearedErrors = { ...formErrors };
-        (Object.keys(updates) as (keyof FormState)[]).forEach(k => delete clearedErrors[k]);
-        setFormErrors(clearedErrors);
     };
 
     // ── Validation ─────────────────────────────────────────────────────────────
@@ -376,10 +350,11 @@ const EmployeesPage: FC = (): ReactElement => {
                         </Text>
                     </Stack.Item>
                     <Stack.Item>
-                        <PrimaryButton
+                        <DefaultButton
                             text="New Employee"
                             iconProps={{ iconName: 'AddFriend' }}
-                            onClick={openCreate}
+                            onClick={() => openCreate(emptyForm())}
+                            primary
                         />
                     </Stack.Item>
                 </Stack>
@@ -399,62 +374,40 @@ const EmployeesPage: FC = (): ReactElement => {
             {/* List error */}
             {listError && (
                 <Stack.Item tokens={stackItemPadding}>
-                    <MessageBar
-                        messageBarType={MessageBarType.error}
-                        onDismiss={() => setListError(null)}
-                        dismissButtonAriaLabel="Dismiss"
-                    >
-                        {listError}
-                    </MessageBar>
+                    <ErrorBar message={listError} onDismiss={() => setListError(null)} />
                 </Stack.Item>
             )}
 
             {/* Main content */}
             <Stack.Item tokens={stackItemPadding}>
-                {loading ? (
-                    <Stack horizontalAlign="center" style={{ padding: 40 }}>
-                        <Spinner size={SpinnerSize.large} label="Loading employees…" />
-                    </Stack>
-                ) : employees.length === 0 ? (
-                    <Stack
-                        horizontalAlign="center"
-                        style={{
-                            padding: 40,
-                            border: '1px dashed #c8c6c4',
-                            borderRadius: 4,
-                        }}
-                    >
-                        <Text variant="large" style={{ color: '#605e5c', marginBottom: 8 }}>
-                            {search ? 'No employees match your search.' : 'No employees yet.'}
-                        </Text>
-                        {!search && (
-                            <DefaultButton
-                                text="Add your first employee"
-                                iconProps={{ iconName: 'AddFriend' }}
-                                onClick={openCreate}
-                            />
-                        )}
-                    </Stack>
-                ) : (
-                    <Stack
-                        styles={{
-                            root: {
-                                border: '1px solid #edebe9',
-                                borderRadius: 4,
-                                overflow: 'hidden',
-                            },
-                        }}
-                    >
-                        {employees.map(emp => (
-                            <EmployeeRow
-                                key={emp.id}
-                                employee={emp}
-                                onEdit={openEdit}
-                                onDelete={setDeleteTarget}
-                            />
-                        ))}
-                    </Stack>
-                )}
+                <ListState
+                    loading={loading}
+                    loadingLabel="Loading employees…"
+                    empty={employees.length === 0}
+                    emptyContent={
+                        <>
+                            <Text variant="large" style={{ color: '#605e5c', marginBottom: 8 }}>
+                                {search ? 'No employees match your search.' : 'No employees yet.'}
+                            </Text>
+                            {!search && (
+                                <DefaultButton
+                                    text="Add your first employee"
+                                    iconProps={{ iconName: 'AddFriend' }}
+                                    onClick={() => openCreate(emptyForm())}
+                                />
+                            )}
+                        </>
+                    }
+                >
+                    {employees.map(emp => (
+                        <EmployeeRow
+                            key={emp.id}
+                            employee={emp}
+                            onEdit={handleOpenEdit}
+                            onDelete={setDeleteTarget}
+                        />
+                    ))}
+                </ListState>
             </Stack.Item>
 
             {/* Employee count */}
@@ -474,14 +427,7 @@ const EmployeesPage: FC = (): ReactElement => {
                 type={PanelType.smallFixedFar}
                 headerText={editing ? `Edit ${displayName(editing)}` : 'New Employee'}
                 onRenderFooterContent={() => (
-                    <Stack horizontal tokens={{ childrenGap: 8 }} style={{ padding: '16px 0' }}>
-                        <PrimaryButton
-                            text={saving ? 'Saving…' : 'Save'}
-                            onClick={handleSave}
-                            disabled={saving}
-                        />
-                        <DefaultButton text="Cancel" onClick={closePanel} disabled={saving} />
-                    </Stack>
+                    <PanelFooter saving={saving} onSave={handleSave} onCancel={closePanel} />
                 )}
                 isFooterAtBottom
             >
@@ -500,40 +446,15 @@ const EmployeesPage: FC = (): ReactElement => {
             </Panel>
 
             {/* Delete confirmation dialog */}
-            <Dialog
+            <DeleteDialog
                 hidden={!deleteTarget}
-                onDismiss={() => !deleting && setDeleteTarget(null)}
-                dialogContentProps={{
-                    type: DialogType.normal,
-                    title: 'Remove employee',
-                    subText: deleteTarget
-                        ? `Remove ${displayName(deleteTarget)}? This cannot be undone.`
-                        : '',
-                }}
-                modalProps={{ isBlocking: true }}
-            >
-                {deleteError && (
-                    <MessageBar
-                        messageBarType={MessageBarType.error}
-                        styles={{ root: { marginBottom: 8 } }}
-                    >
-                        {deleteError}
-                    </MessageBar>
-                )}
-                <DialogFooter>
-                    <PrimaryButton
-                        text={deleting ? 'Removing…' : 'Remove'}
-                        onClick={handleDeleteConfirm}
-                        disabled={deleting}
-                        styles={{ root: { background: '#a4262c', borderColor: '#a4262c' } }}
-                    />
-                    <DefaultButton
-                        text="Cancel"
-                        onClick={() => setDeleteTarget(null)}
-                        disabled={deleting}
-                    />
-                </DialogFooter>
-            </Dialog>
+                title="Remove employee"
+                subText={deleteTarget ? `Remove ${displayName(deleteTarget)}? This cannot be undone.` : ''}
+                deleting={deleting}
+                deleteError={deleteError}
+                onConfirm={handleDeleteConfirm}
+                onDismiss={() => { if (!deleting) setDeleteTarget(null); }}
+            />
         </Stack>
     );
 };
