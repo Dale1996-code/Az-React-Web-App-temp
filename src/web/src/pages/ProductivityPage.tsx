@@ -1,18 +1,12 @@
 import { FC, ReactElement, useCallback, useEffect, useState } from 'react';
 import {
     DefaultButton,
-    Dialog,
-    DialogFooter,
-    DialogType,
     Dropdown,
     IDropdownOption,
     MessageBar,
     MessageBarType,
     Panel,
     PanelType,
-    PrimaryButton,
-    Spinner,
-    SpinnerSize,
     Stack,
     Text,
     TextField,
@@ -25,22 +19,21 @@ import {
     updateProductivityRecord,
     deleteProductivityRecord,
 } from '../services/productivityService';
-import { Employee } from '../models/employee';
-import { getEmployees } from '../services/employeesService';
-
-// ── Helpers ────────────────────────────────────────────────────────────────────
-
-function todayISO(): string {
-    return new Date().toISOString().split('T')[0];
-}
+import { useCrudPanel } from '../hooks/useCrudPanel';
+import { useEmployees } from '../hooks/useEmployees';
+import { todayISO, ISO_DATE_RE } from '../utils/dateUtils';
+import ListState from '../components/ListState';
+import PanelFooter from '../components/PanelFooter';
+import DeleteDialog from '../components/DeleteDialog';
+import ErrorBar from '../components/ErrorBar';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 type FormState = {
     employeeId: string;
     storeDate: string;
-    freightStockedUnits: string;   // kept as string for text input, parsed on save
-    breakMinutes: string;          // kept as string for text input, parsed on save
+    freightStockedUnits: string;
+    breakMinutes: string;
     zonesCovered: string;
     overstockNotes: string;
     shiftNotes: string;
@@ -60,7 +53,7 @@ const emptyForm = (date?: string): FormState => ({
 
 type ProductivityRowProps = {
     record: ProductivityRecord;
-    employeeMap: Map<string, Employee>;
+    employeeMap: Map<string, { firstName: string; lastName: string; department?: string }>;
     onEdit: (record: ProductivityRecord) => void;
     onDelete: (record: ProductivityRecord) => void;
 };
@@ -260,47 +253,24 @@ const ProductivityPage: FC = (): ReactElement => {
     const [loading, setLoading] = useState(true);
     const [listError, setListError] = useState<string | null>(null);
 
-    // Date filter — defaults to today
     const [filterDate, setFilterDate] = useState(todayISO());
 
-    // Employee lookup for display + dropdown
-    const [employeeMap, setEmployeeMap] = useState<Map<string, Employee>>(new Map());
-    const [employeeOptions, setEmployeeOptions] = useState<IDropdownOption[]>([]);
+    const { employeeMap, employeeOptions } = useEmployees();
 
-    // Panel state
-    const [panelOpen, setPanelOpen] = useState(false);
-    const [editing, setEditing] = useState<ProductivityRecord | null>(null);
-    const [form, setForm] = useState<FormState>(emptyForm());
-    const [formErrors, setFormErrors] = useState<Partial<Record<keyof FormState, string>>>({});
-    const [saving, setSaving] = useState(false);
-    const [saveError, setSaveError] = useState<string | null>(null);
+    const {
+        panelOpen, setPanelOpen,
+        editing,
+        form,
+        formErrors, setFormErrors,
+        saving, setSaving,
+        saveError, setSaveError,
+        deleteTarget, setDeleteTarget,
+        deleting, setDeleting,
+        deleteError, setDeleteError,
+        openCreate, openEdit, closePanel, updateForm,
+    } = useCrudPanel<ProductivityRecord, FormState>(emptyForm());
 
-    // Delete dialog
-    const [deleteTarget, setDeleteTarget] = useState<ProductivityRecord | null>(null);
-    const [deleting, setDeleting] = useState(false);
-    const [deleteError, setDeleteError] = useState<string | null>(null);
-
-    // ── Load employees once (for name display and dropdown) ────────────────────
-
-    useEffect(() => {
-        getEmployees({ active: true }).then(list => {
-            const map = new Map<string, Employee>();
-            const opts: IDropdownOption[] = [];
-            list.forEach(emp => {
-                map.set(emp.id, emp);
-                opts.push({
-                    key: emp.id,
-                    text: `${emp.firstName} ${emp.lastName}${emp.department ? ` (${emp.department})` : ''}`,
-                });
-            });
-            setEmployeeMap(map);
-            setEmployeeOptions(opts);
-        }).catch(() => {
-            // Non-fatal — employees will show as IDs if this fails
-        });
-    }, []);
-
-    // ── Load productivity records for the selected date ────────────────────────
+    // ── Load records for the selected date ────────────────────────────────────
 
     const load = useCallback(async (date: string) => {
         setLoading(true);
@@ -321,17 +291,8 @@ const ProductivityPage: FC = (): ReactElement => {
 
     // ── Panel helpers ──────────────────────────────────────────────────────────
 
-    const openCreate = () => {
-        setEditing(null);
-        setForm(emptyForm(filterDate));
-        setFormErrors({});
-        setSaveError(null);
-        setPanelOpen(true);
-    };
-
-    const openEdit = (record: ProductivityRecord) => {
-        setEditing(record);
-        setForm({
+    const handleOpenEdit = (record: ProductivityRecord) => {
+        openEdit(record, {
             employeeId: record.employeeId,
             storeDate: record.storeDate,
             freightStockedUnits: record.freightStockedUnits != null ? String(record.freightStockedUnits) : '',
@@ -340,26 +301,9 @@ const ProductivityPage: FC = (): ReactElement => {
             overstockNotes: record.overstockNotes ?? '',
             shiftNotes: record.shiftNotes ?? '',
         });
-        setFormErrors({});
-        setSaveError(null);
-        setPanelOpen(true);
     };
 
-    const closePanel = () => {
-        if (saving) return;
-        setPanelOpen(false);
-    };
-
-    const updateForm = (updates: Partial<FormState>) => {
-        setForm(prev => ({ ...prev, ...updates }));
-        const cleared = { ...formErrors };
-        (Object.keys(updates) as (keyof FormState)[]).forEach(k => delete cleared[k]);
-        setFormErrors(cleared);
-    };
-
-    // ── Client-side validation ─────────────────────────────────────────────────
-
-    const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+    // ── Validation ─────────────────────────────────────────────────────────────
 
     const validateForm = (): boolean => {
         const errs: Partial<Record<keyof FormState, string>> = {};
@@ -426,8 +370,6 @@ const ProductivityPage: FC = (): ReactElement => {
         }
     };
 
-    // ── Delete dialog label ────────────────────────────────────────────────────
-
     const deleteLabel = deleteTarget
         ? (() => {
               const emp = employeeMap.get(deleteTarget.employeeId);
@@ -455,10 +397,11 @@ const ProductivityPage: FC = (): ReactElement => {
                         </Text>
                     </Stack.Item>
                     <Stack.Item>
-                        <PrimaryButton
+                        <DefaultButton
                             text="New Entry"
                             iconProps={{ iconName: 'Add' }}
-                            onClick={openCreate}
+                            onClick={() => openCreate(emptyForm(filterDate))}
+                            primary
                         />
                     </Stack.Item>
                 </Stack>
@@ -485,61 +428,39 @@ const ProductivityPage: FC = (): ReactElement => {
             {/* List error */}
             {listError && (
                 <Stack.Item tokens={stackItemPadding}>
-                    <MessageBar
-                        messageBarType={MessageBarType.error}
-                        onDismiss={() => setListError(null)}
-                        dismissButtonAriaLabel="Dismiss"
-                    >
-                        {listError}
-                    </MessageBar>
+                    <ErrorBar message={listError} onDismiss={() => setListError(null)} />
                 </Stack.Item>
             )}
 
             {/* Records list */}
             <Stack.Item tokens={stackItemPadding}>
-                {loading ? (
-                    <Stack horizontalAlign="center" style={{ padding: 40 }}>
-                        <Spinner size={SpinnerSize.large} label="Loading productivity records…" />
-                    </Stack>
-                ) : records.length === 0 ? (
-                    <Stack
-                        horizontalAlign="center"
-                        style={{
-                            padding: 40,
-                            border: '1px dashed #c8c6c4',
-                            borderRadius: 4,
-                        }}
-                    >
-                        <Text variant="large" style={{ color: '#605e5c', marginBottom: 8 }}>
-                            No productivity entries for {filterDate}.
-                        </Text>
-                        <DefaultButton
-                            text="Add first entry"
-                            iconProps={{ iconName: 'Add' }}
-                            onClick={openCreate}
-                        />
-                    </Stack>
-                ) : (
-                    <Stack
-                        styles={{
-                            root: {
-                                border: '1px solid #edebe9',
-                                borderRadius: 4,
-                                overflow: 'hidden',
-                            },
-                        }}
-                    >
-                        {records.map(rec => (
-                            <ProductivityRow
-                                key={rec.id}
-                                record={rec}
-                                employeeMap={employeeMap}
-                                onEdit={openEdit}
-                                onDelete={setDeleteTarget}
+                <ListState
+                    loading={loading}
+                    loadingLabel="Loading productivity records…"
+                    empty={records.length === 0}
+                    emptyContent={
+                        <>
+                            <Text variant="large" style={{ color: '#605e5c', marginBottom: 8 }}>
+                                No productivity entries for {filterDate}.
+                            </Text>
+                            <DefaultButton
+                                text="Add first entry"
+                                iconProps={{ iconName: 'Add' }}
+                                onClick={() => openCreate(emptyForm(filterDate))}
                             />
-                        ))}
-                    </Stack>
-                )}
+                        </>
+                    }
+                >
+                    {records.map(rec => (
+                        <ProductivityRow
+                            key={rec.id}
+                            record={rec}
+                            employeeMap={employeeMap}
+                            onEdit={handleOpenEdit}
+                            onDelete={setDeleteTarget}
+                        />
+                    ))}
+                </ListState>
             </Stack.Item>
 
             {/* Record count */}
@@ -558,18 +479,7 @@ const ProductivityPage: FC = (): ReactElement => {
                 type={PanelType.smallFixedFar}
                 headerText={editing ? 'Edit Productivity Entry' : 'New Productivity Entry'}
                 onRenderFooterContent={() => (
-                    <Stack
-                        horizontal
-                        tokens={{ childrenGap: 8 }}
-                        style={{ padding: '16px 0' }}
-                    >
-                        <PrimaryButton
-                            text={saving ? 'Saving…' : 'Save'}
-                            onClick={handleSave}
-                            disabled={saving}
-                        />
-                        <DefaultButton text="Cancel" onClick={closePanel} disabled={saving} />
-                    </Stack>
+                    <PanelFooter saving={saving} onSave={handleSave} onCancel={closePanel} />
                 )}
                 isFooterAtBottom
             >
@@ -593,40 +503,17 @@ const ProductivityPage: FC = (): ReactElement => {
             </Panel>
 
             {/* Delete confirmation dialog */}
-            <Dialog
+            <DeleteDialog
                 hidden={!deleteTarget}
-                onDismiss={() => !deleting && setDeleteTarget(null)}
-                dialogContentProps={{
-                    type: DialogType.normal,
-                    title: 'Remove productivity entry',
-                    subText: deleteTarget
-                        ? `Remove the entry for ${deleteLabel} on ${deleteTarget.storeDate}? This cannot be undone.`
-                        : '',
-                }}
-                modalProps={{ isBlocking: true }}
-            >
-                {deleteError && (
-                    <MessageBar
-                        messageBarType={MessageBarType.error}
-                        styles={{ root: { marginBottom: 8 } }}
-                    >
-                        {deleteError}
-                    </MessageBar>
-                )}
-                <DialogFooter>
-                    <PrimaryButton
-                        text={deleting ? 'Removing…' : 'Remove'}
-                        onClick={handleDeleteConfirm}
-                        disabled={deleting}
-                        styles={{ root: { background: '#a4262c', borderColor: '#a4262c' } }}
-                    />
-                    <DefaultButton
-                        text="Cancel"
-                        onClick={() => setDeleteTarget(null)}
-                        disabled={deleting}
-                    />
-                </DialogFooter>
-            </Dialog>
+                title="Remove productivity entry"
+                subText={deleteTarget
+                    ? `Remove the entry for ${deleteLabel} on ${deleteTarget.storeDate}? This cannot be undone.`
+                    : ''}
+                deleting={deleting}
+                deleteError={deleteError}
+                onConfirm={handleDeleteConfirm}
+                onDismiss={() => { if (!deleting) setDeleteTarget(null); }}
+            />
         </Stack>
     );
 };

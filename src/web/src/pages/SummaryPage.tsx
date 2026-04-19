@@ -1,18 +1,12 @@
 import { FC, ReactElement, useCallback, useEffect, useState } from 'react';
 import {
     DefaultButton,
-    Dialog,
-    DialogFooter,
-    DialogType,
     Dropdown,
     IDropdownOption,
     MessageBar,
     MessageBarType,
     Panel,
     PanelType,
-    PrimaryButton,
-    Spinner,
-    SpinnerSize,
     Stack,
     Text,
     TextField,
@@ -20,8 +14,13 @@ import {
 import { stackGaps, stackItemPadding, stackPadding } from '../ux/styles';
 import { DailySummary, SummaryFormData } from '../models/summary';
 import { getSummaries, createSummary, updateSummary, deleteSummary } from '../services/summaryService';
-import { Employee } from '../models/employee';
-import { getEmployees } from '../services/employeesService';
+import { useCrudPanel } from '../hooks/useCrudPanel';
+import { useEmployees } from '../hooks/useEmployees';
+import { todayISO, ISO_DATE_RE } from '../utils/dateUtils';
+import ListState from '../components/ListState';
+import PanelFooter from '../components/PanelFooter';
+import DeleteDialog from '../components/DeleteDialog';
+import ErrorBar from '../components/ErrorBar';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -40,25 +39,19 @@ const SHIFT_FILTER_OPTIONS: IDropdownOption[] = [
     { key: 'overnight', text: 'Overnight' },
 ];
 
-// Colours for shift labels.
 const SHIFT_COLORS: Record<string, string> = {
-    morning:   '#0078d4', // blue
-    afternoon: '#8764b8', // purple
-    closing:   '#d83b01', // orange
-    overnight: '#004578', // dark blue
+    morning:   '#0078d4',
+    afternoon: '#8764b8',
+    closing:   '#d83b01',
+    overnight: '#004578',
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
-
-function todayISO(): string {
-    return new Date().toISOString().split('T')[0];
-}
 
 function capitalise(s: string): string {
     return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-// Truncate long text for the list preview.
 function preview(text?: string, max = 80): string {
     if (!text) return '—';
     return text.length <= max ? text : text.slice(0, max) + '…';
@@ -90,7 +83,7 @@ const emptyForm = (date?: string): FormState => ({
 
 type SummaryRowProps = {
     summary: DailySummary;
-    employeeMap: Map<string, Employee>;
+    employeeMap: Map<string, { firstName: string; lastName: string }>;
     onEdit: (s: DailySummary) => void;
     onDelete: (s: DailySummary) => void;
 };
@@ -286,46 +279,23 @@ const SummaryPage: FC = (): ReactElement => {
     const [loading, setLoading]     = useState(true);
     const [listError, setListError] = useState<string | null>(null);
 
-    // Filters
     const [filterDate, setFilterDate]   = useState(todayISO());
     const [filterShift, setFilterShift] = useState('');
 
-    // Employee lookup for display + dropdown.
-    const [employeeMap, setEmployeeMap]       = useState<Map<string, Employee>>(new Map());
-    const [employeeOptions, setEmployeeOptions] = useState<IDropdownOption[]>([]);
+    const { employeeMap, employeeOptions } = useEmployees();
 
-    // Panel state
-    const [panelOpen, setPanelOpen]   = useState(false);
-    const [editing, setEditing]       = useState<DailySummary | null>(null);
-    const [form, setForm]             = useState<FormState>(emptyForm());
-    const [formErrors, setFormErrors] = useState<Partial<Record<keyof FormState, string>>>({});
-    const [saving, setSaving]         = useState(false);
-    const [saveError, setSaveError]   = useState<string | null>(null);
-
-    // Delete dialog
-    const [deleteTarget, setDeleteTarget] = useState<DailySummary | null>(null);
-    const [deleting, setDeleting]         = useState(false);
-    const [deleteError, setDeleteError]   = useState<string | null>(null);
-
-    // ── Load employees once ────────────────────────────────────────────────────
-
-    useEffect(() => {
-        getEmployees({ active: true }).then(list => {
-            const map = new Map<string, Employee>();
-            const opts: IDropdownOption[] = [];
-            list.forEach(emp => {
-                map.set(emp.id, emp);
-                opts.push({
-                    key:  emp.id,
-                    text: `${emp.firstName} ${emp.lastName}${emp.department ? ` (${emp.department})` : ''}`,
-                });
-            });
-            setEmployeeMap(map);
-            setEmployeeOptions(opts);
-        }).catch(() => {
-            // Non-fatal — author name will fall back to ID if this fails.
-        });
-    }, []);
+    const {
+        panelOpen, setPanelOpen,
+        editing,
+        form,
+        formErrors, setFormErrors,
+        saving, setSaving,
+        saveError, setSaveError,
+        deleteTarget, setDeleteTarget,
+        deleting, setDeleting,
+        deleteError, setDeleteError,
+        openCreate, openEdit, closePanel, updateForm,
+    } = useCrudPanel<DailySummary, FormState>(emptyForm());
 
     // ── Load summaries ─────────────────────────────────────────────────────────
 
@@ -337,7 +307,6 @@ const SummaryPage: FC = (): ReactElement => {
             if (date)       query.date       = date;
             if (shiftLabel) query.shiftLabel = shiftLabel;
             const data = await getSummaries(query);
-            // Sort newest first by storeDate then by id (creation order).
             setSummaries(data.sort((a, b) =>
                 b.storeDate.localeCompare(a.storeDate) || b.id.localeCompare(a.id)
             ));
@@ -354,17 +323,8 @@ const SummaryPage: FC = (): ReactElement => {
 
     // ── Panel helpers ──────────────────────────────────────────────────────────
 
-    const openCreate = () => {
-        setEditing(null);
-        setForm(emptyForm(filterDate || todayISO()));
-        setFormErrors({});
-        setSaveError(null);
-        setPanelOpen(true);
-    };
-
-    const openEdit = (summary: DailySummary) => {
-        setEditing(summary);
-        setForm({
+    const handleOpenEdit = (summary: DailySummary) => {
+        openEdit(summary, {
             storeDate:        summary.storeDate,
             shiftLabel:       summary.shiftLabel,
             completedWork:    summary.completedWork    ?? '',
@@ -373,27 +333,9 @@ const SummaryPage: FC = (): ReactElement => {
             generalNotes:     summary.generalNotes     ?? '',
             authorEmployeeId: summary.authorEmployeeId ?? '',
         });
-        setFormErrors({});
-        setSaveError(null);
-        setPanelOpen(true);
     };
 
-    const closePanel = () => {
-        if (saving) return;
-        setPanelOpen(false);
-    };
-
-    const updateForm = (updates: Partial<FormState>) => {
-        setForm(prev => ({ ...prev, ...updates }));
-        // Clear field-level errors as the user types.
-        const cleared = { ...formErrors };
-        (Object.keys(updates) as (keyof FormState)[]).forEach(k => delete cleared[k]);
-        setFormErrors(cleared);
-    };
-
-    // ── Client-side validation ─────────────────────────────────────────────────
-
-    const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+    // ── Validation ─────────────────────────────────────────────────────────────
 
     const validateForm = (): boolean => {
         const errs: Partial<Record<keyof FormState, string>> = {};
@@ -476,10 +418,11 @@ const SummaryPage: FC = (): ReactElement => {
                         </Text>
                     </Stack.Item>
                     <Stack.Item>
-                        <PrimaryButton
+                        <DefaultButton
                             text="New Summary"
                             iconProps={{ iconName: 'Add' }}
-                            onClick={openCreate}
+                            onClick={() => openCreate(emptyForm(filterDate || todayISO()))}
+                            primary
                         />
                     </Stack.Item>
                 </Stack>
@@ -513,61 +456,39 @@ const SummaryPage: FC = (): ReactElement => {
             {/* List error */}
             {listError && (
                 <Stack.Item tokens={stackItemPadding}>
-                    <MessageBar
-                        messageBarType={MessageBarType.error}
-                        onDismiss={() => setListError(null)}
-                        dismissButtonAriaLabel="Dismiss"
-                    >
-                        {listError}
-                    </MessageBar>
+                    <ErrorBar message={listError} onDismiss={() => setListError(null)} />
                 </Stack.Item>
             )}
 
             {/* Summaries list */}
             <Stack.Item tokens={stackItemPadding}>
-                {loading ? (
-                    <Stack horizontalAlign="center" style={{ padding: 40 }}>
-                        <Spinner size={SpinnerSize.large} label="Loading summaries…" />
-                    </Stack>
-                ) : summaries.length === 0 ? (
-                    <Stack
-                        horizontalAlign="center"
-                        style={{
-                            padding: 40,
-                            border: '1px dashed #c8c6c4',
-                            borderRadius: 4,
-                        }}
-                    >
-                        <Text variant="large" style={{ color: '#605e5c', marginBottom: 8 }}>
-                            No summaries found.
-                        </Text>
-                        <DefaultButton
-                            text="Create first summary"
-                            iconProps={{ iconName: 'Add' }}
-                            onClick={openCreate}
-                        />
-                    </Stack>
-                ) : (
-                    <Stack
-                        styles={{
-                            root: {
-                                border: '1px solid #edebe9',
-                                borderRadius: 4,
-                                overflow: 'hidden',
-                            },
-                        }}
-                    >
-                        {summaries.map(s => (
-                            <SummaryRow
-                                key={s.id}
-                                summary={s}
-                                employeeMap={employeeMap}
-                                onEdit={openEdit}
-                                onDelete={setDeleteTarget}
+                <ListState
+                    loading={loading}
+                    loadingLabel="Loading summaries…"
+                    empty={summaries.length === 0}
+                    emptyContent={
+                        <>
+                            <Text variant="large" style={{ color: '#605e5c', marginBottom: 8 }}>
+                                No summaries found.
+                            </Text>
+                            <DefaultButton
+                                text="Create first summary"
+                                iconProps={{ iconName: 'Add' }}
+                                onClick={() => openCreate(emptyForm(filterDate || todayISO()))}
                             />
-                        ))}
-                    </Stack>
-                )}
+                        </>
+                    }
+                >
+                    {summaries.map(s => (
+                        <SummaryRow
+                            key={s.id}
+                            summary={s}
+                            employeeMap={employeeMap}
+                            onEdit={handleOpenEdit}
+                            onDelete={setDeleteTarget}
+                        />
+                    ))}
+                </ListState>
             </Stack.Item>
 
             {/* Record count */}
@@ -586,14 +507,7 @@ const SummaryPage: FC = (): ReactElement => {
                 type={PanelType.smallFixedFar}
                 headerText={editing ? 'Edit Summary' : 'New Shift Summary'}
                 onRenderFooterContent={() => (
-                    <Stack horizontal tokens={{ childrenGap: 8 }} style={{ padding: '16px 0' }}>
-                        <PrimaryButton
-                            text={saving ? 'Saving…' : 'Save'}
-                            onClick={handleSave}
-                            disabled={saving}
-                        />
-                        <DefaultButton text="Cancel" onClick={closePanel} disabled={saving} />
-                    </Stack>
+                    <PanelFooter saving={saving} onSave={handleSave} onCancel={closePanel} />
                 )}
                 isFooterAtBottom
             >
@@ -617,40 +531,17 @@ const SummaryPage: FC = (): ReactElement => {
             </Panel>
 
             {/* Delete confirmation dialog */}
-            <Dialog
+            <DeleteDialog
                 hidden={!deleteTarget}
-                onDismiss={() => !deleting && setDeleteTarget(null)}
-                dialogContentProps={{
-                    type:    DialogType.normal,
-                    title:   'Remove summary',
-                    subText: deleteTarget
-                        ? `Remove the ${capitalise(deleteTarget.shiftLabel)} summary for ${deleteTarget.storeDate}? This cannot be undone.`
-                        : '',
-                }}
-                modalProps={{ isBlocking: true }}
-            >
-                {deleteError && (
-                    <MessageBar
-                        messageBarType={MessageBarType.error}
-                        styles={{ root: { marginBottom: 8 } }}
-                    >
-                        {deleteError}
-                    </MessageBar>
-                )}
-                <DialogFooter>
-                    <PrimaryButton
-                        text={deleting ? 'Removing…' : 'Remove'}
-                        onClick={handleDeleteConfirm}
-                        disabled={deleting}
-                        styles={{ root: { background: '#a4262c', borderColor: '#a4262c' } }}
-                    />
-                    <DefaultButton
-                        text="Cancel"
-                        onClick={() => setDeleteTarget(null)}
-                        disabled={deleting}
-                    />
-                </DialogFooter>
-            </Dialog>
+                title="Remove summary"
+                subText={deleteTarget
+                    ? `Remove the ${capitalise(deleteTarget.shiftLabel)} summary for ${deleteTarget.storeDate}? This cannot be undone.`
+                    : ''}
+                deleting={deleting}
+                deleteError={deleteError}
+                onConfirm={handleDeleteConfirm}
+                onDismiss={() => { if (!deleting) setDeleteTarget(null); }}
+            />
         </Stack>
     );
 };

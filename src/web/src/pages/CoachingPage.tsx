@@ -2,9 +2,6 @@ import { FC, ReactElement, useCallback, useEffect, useState } from 'react';
 import {
     Checkbox,
     DefaultButton,
-    Dialog,
-    DialogFooter,
-    DialogType,
     Dropdown,
     IDropdownOption,
     Label,
@@ -12,9 +9,6 @@ import {
     MessageBarType,
     Panel,
     PanelType,
-    PrimaryButton,
-    Spinner,
-    SpinnerSize,
     Stack,
     Text,
     TextField,
@@ -27,12 +21,16 @@ import {
     updateCoachingRecord,
     deleteCoachingRecord,
 } from '../services/coachingService';
-import { Employee } from '../models/employee';
-import { getEmployees } from '../services/employeesService';
+import { useCrudPanel } from '../hooks/useCrudPanel';
+import { useEmployees } from '../hooks/useEmployees';
+import { todayISO, ISO_DATE_RE } from '../utils/dateUtils';
+import ListState from '../components/ListState';
+import PanelFooter from '../components/PanelFooter';
+import DeleteDialog from '../components/DeleteDialog';
+import ErrorBar from '../components/ErrorBar';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-// Common retail coaching issue labels shown as checkboxes in the form.
 const ISSUE_OPTIONS = [
     'Attendance',
     'Punctuality',
@@ -51,18 +49,11 @@ const STATUS_OPTIONS: IDropdownOption[] = [
     { key: 'closed',       text: 'Closed' },
 ];
 
-// Status display colours — neutral palette matching the rest of the app.
 const STATUS_COLORS: Record<string, string> = {
-    open:         '#d83b01', // orange-red
-    acknowledged: '#0078d4', // blue
-    closed:       '#107c10', // green
+    open:         '#d83b01',
+    acknowledged: '#0078d4',
+    closed:       '#107c10',
 };
-
-// ── Helpers ────────────────────────────────────────────────────────────────────
-
-function todayISO(): string {
-    return new Date().toISOString().split('T')[0];
-}
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -70,7 +61,7 @@ type FormState = {
     employeeId: string;
     storeDate: string;
     topic: string;
-    issues: string[];       // selected issue labels
+    issues: string[];
     goals: string;
     followUpDate: string;
     acknowledgement: string;
@@ -92,7 +83,7 @@ const emptyForm = (date?: string): FormState => ({
 
 type CoachingRowProps = {
     record: CoachingRecord;
-    employeeMap: Map<string, Employee>;
+    employeeMap: Map<string, { firstName: string; lastName: string; department?: string }>;
     onEdit: (record: CoachingRecord) => void;
     onDelete: (record: CoachingRecord) => void;
 };
@@ -211,7 +202,6 @@ const CoachingForm: FC<CoachingFormProps> = ({
     errors,
     employeeOptions,
 }): ReactElement => {
-    // Toggle a single issue label on/off in the issues array.
     const toggleIssue = (label: string, checked: boolean) => {
         const next = checked
             ? [...form.issues, label]
@@ -310,49 +300,27 @@ const CoachingPage: FC = (): ReactElement => {
     const [loading, setLoading] = useState(true);
     const [listError, setListError] = useState<string | null>(null);
 
-    // Filters — date defaults to today; employee filter is optional.
     const [filterDate, setFilterDate] = useState(todayISO());
     const [filterEmployeeId, setFilterEmployeeId] = useState('');
 
-    // Employee lookup for display + dropdown.
-    const [employeeMap, setEmployeeMap] = useState<Map<string, Employee>>(new Map());
-    const [employeeOptions, setEmployeeOptions] = useState<IDropdownOption[]>([]);
-    const [employeeFilterOptions, setEmployeeFilterOptions] = useState<IDropdownOption[]>([]);
+    const { employeeMap, employeeOptions } = useEmployees();
+    const employeeFilterOptions: IDropdownOption[] = [
+        { key: '', text: 'All employees' },
+        ...employeeOptions,
+    ];
 
-    // Panel state
-    const [panelOpen, setPanelOpen] = useState(false);
-    const [editing, setEditing] = useState<CoachingRecord | null>(null);
-    const [form, setForm] = useState<FormState>(emptyForm());
-    const [formErrors, setFormErrors] = useState<Partial<Record<keyof FormState, string>>>({});
-    const [saving, setSaving] = useState(false);
-    const [saveError, setSaveError] = useState<string | null>(null);
-
-    // Delete dialog
-    const [deleteTarget, setDeleteTarget] = useState<CoachingRecord | null>(null);
-    const [deleting, setDeleting] = useState(false);
-    const [deleteError, setDeleteError] = useState<string | null>(null);
-
-    // ── Load employees once ────────────────────────────────────────────────────
-
-    useEffect(() => {
-        getEmployees({ active: true }).then(list => {
-            const map = new Map<string, Employee>();
-            const opts: IDropdownOption[] = [];
-            list.forEach(emp => {
-                map.set(emp.id, emp);
-                opts.push({
-                    key: emp.id,
-                    text: `${emp.firstName} ${emp.lastName}${emp.department ? ` (${emp.department})` : ''}`,
-                });
-            });
-            setEmployeeMap(map);
-            setEmployeeOptions(opts);
-            // Filter dropdown includes an "All employees" option.
-            setEmployeeFilterOptions([{ key: '', text: 'All employees' }, ...opts]);
-        }).catch(() => {
-            // Non-fatal — employees will fall back to ID strings if this fails.
-        });
-    }, []);
+    const {
+        panelOpen, setPanelOpen,
+        editing,
+        form,
+        formErrors, setFormErrors,
+        saving, setSaving,
+        saveError, setSaveError,
+        deleteTarget, setDeleteTarget,
+        deleting, setDeleting,
+        deleteError, setDeleteError,
+        openCreate, openEdit, closePanel, updateForm,
+    } = useCrudPanel<CoachingRecord, FormState>(emptyForm());
 
     // ── Load coaching records ──────────────────────────────────────────────────
 
@@ -378,47 +346,20 @@ const CoachingPage: FC = (): ReactElement => {
 
     // ── Panel helpers ──────────────────────────────────────────────────────────
 
-    const openCreate = () => {
-        setEditing(null);
-        setForm(emptyForm(filterDate));
-        setFormErrors({});
-        setSaveError(null);
-        setPanelOpen(true);
-    };
-
-    const openEdit = (record: CoachingRecord) => {
-        setEditing(record);
-        setForm({
-            employeeId:    record.employeeId,
-            storeDate:     record.storeDate,
-            topic:         record.topic,
-            issues:        record.issues ?? [],
-            goals:         record.goals ?? '',
-            followUpDate:  record.followUpDate ?? '',
+    const handleOpenEdit = (record: CoachingRecord) => {
+        openEdit(record, {
+            employeeId:      record.employeeId,
+            storeDate:       record.storeDate,
+            topic:           record.topic,
+            issues:          record.issues ?? [],
+            goals:           record.goals ?? '',
+            followUpDate:    record.followUpDate ?? '',
             acknowledgement: record.acknowledgement ?? '',
-            status:        record.status ?? 'open',
+            status:          record.status ?? 'open',
         });
-        setFormErrors({});
-        setSaveError(null);
-        setPanelOpen(true);
     };
 
-    const closePanel = () => {
-        if (saving) return;
-        setPanelOpen(false);
-    };
-
-    const updateForm = (updates: Partial<FormState>) => {
-        setForm(prev => ({ ...prev, ...updates }));
-        // Clear field-level errors as the user types.
-        const cleared = { ...formErrors };
-        (Object.keys(updates) as (keyof FormState)[]).forEach(k => delete cleared[k]);
-        setFormErrors(cleared);
-    };
-
-    // ── Client-side validation ─────────────────────────────────────────────────
-
-    const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+    // ── Validation ─────────────────────────────────────────────────────────────
 
     const validateForm = (): boolean => {
         const errs: Partial<Record<keyof FormState, string>> = {};
@@ -513,10 +454,11 @@ const CoachingPage: FC = (): ReactElement => {
                         </Text>
                     </Stack.Item>
                     <Stack.Item>
-                        <PrimaryButton
+                        <DefaultButton
                             text="New Record"
                             iconProps={{ iconName: 'Add' }}
-                            onClick={openCreate}
+                            onClick={() => openCreate(emptyForm(filterDate))}
+                            primary
                         />
                     </Stack.Item>
                 </Stack>
@@ -550,61 +492,39 @@ const CoachingPage: FC = (): ReactElement => {
             {/* List error */}
             {listError && (
                 <Stack.Item tokens={stackItemPadding}>
-                    <MessageBar
-                        messageBarType={MessageBarType.error}
-                        onDismiss={() => setListError(null)}
-                        dismissButtonAriaLabel="Dismiss"
-                    >
-                        {listError}
-                    </MessageBar>
+                    <ErrorBar message={listError} onDismiss={() => setListError(null)} />
                 </Stack.Item>
             )}
 
             {/* Records list */}
             <Stack.Item tokens={stackItemPadding}>
-                {loading ? (
-                    <Stack horizontalAlign="center" style={{ padding: 40 }}>
-                        <Spinner size={SpinnerSize.large} label="Loading coaching records…" />
-                    </Stack>
-                ) : records.length === 0 ? (
-                    <Stack
-                        horizontalAlign="center"
-                        style={{
-                            padding: 40,
-                            border: '1px dashed #c8c6c4',
-                            borderRadius: 4,
-                        }}
-                    >
-                        <Text variant="large" style={{ color: '#605e5c', marginBottom: 8 }}>
-                            No coaching records found.
-                        </Text>
-                        <DefaultButton
-                            text="Add first record"
-                            iconProps={{ iconName: 'Add' }}
-                            onClick={openCreate}
-                        />
-                    </Stack>
-                ) : (
-                    <Stack
-                        styles={{
-                            root: {
-                                border: '1px solid #edebe9',
-                                borderRadius: 4,
-                                overflow: 'hidden',
-                            },
-                        }}
-                    >
-                        {records.map(rec => (
-                            <CoachingRow
-                                key={rec.id}
-                                record={rec}
-                                employeeMap={employeeMap}
-                                onEdit={openEdit}
-                                onDelete={setDeleteTarget}
+                <ListState
+                    loading={loading}
+                    loadingLabel="Loading coaching records…"
+                    empty={records.length === 0}
+                    emptyContent={
+                        <>
+                            <Text variant="large" style={{ color: '#605e5c', marginBottom: 8 }}>
+                                No coaching records found.
+                            </Text>
+                            <DefaultButton
+                                text="Add first record"
+                                iconProps={{ iconName: 'Add' }}
+                                onClick={() => openCreate(emptyForm(filterDate))}
                             />
-                        ))}
-                    </Stack>
-                )}
+                        </>
+                    }
+                >
+                    {records.map(rec => (
+                        <CoachingRow
+                            key={rec.id}
+                            record={rec}
+                            employeeMap={employeeMap}
+                            onEdit={handleOpenEdit}
+                            onDelete={setDeleteTarget}
+                        />
+                    ))}
+                </ListState>
             </Stack.Item>
 
             {/* Record count */}
@@ -623,18 +543,7 @@ const CoachingPage: FC = (): ReactElement => {
                 type={PanelType.smallFixedFar}
                 headerText={editing ? 'Edit Coaching Record' : 'New Coaching Record'}
                 onRenderFooterContent={() => (
-                    <Stack
-                        horizontal
-                        tokens={{ childrenGap: 8 }}
-                        style={{ padding: '16px 0' }}
-                    >
-                        <PrimaryButton
-                            text={saving ? 'Saving…' : 'Save'}
-                            onClick={handleSave}
-                            disabled={saving}
-                        />
-                        <DefaultButton text="Cancel" onClick={closePanel} disabled={saving} />
-                    </Stack>
+                    <PanelFooter saving={saving} onSave={handleSave} onCancel={closePanel} />
                 )}
                 isFooterAtBottom
             >
@@ -658,40 +567,17 @@ const CoachingPage: FC = (): ReactElement => {
             </Panel>
 
             {/* Delete confirmation dialog */}
-            <Dialog
+            <DeleteDialog
                 hidden={!deleteTarget}
-                onDismiss={() => !deleting && setDeleteTarget(null)}
-                dialogContentProps={{
-                    type: DialogType.normal,
-                    title: 'Remove coaching record',
-                    subText: deleteTarget
-                        ? `Remove the coaching record for ${deleteLabel} on ${deleteTarget.storeDate}? This cannot be undone.`
-                        : '',
-                }}
-                modalProps={{ isBlocking: true }}
-            >
-                {deleteError && (
-                    <MessageBar
-                        messageBarType={MessageBarType.error}
-                        styles={{ root: { marginBottom: 8 } }}
-                    >
-                        {deleteError}
-                    </MessageBar>
-                )}
-                <DialogFooter>
-                    <PrimaryButton
-                        text={deleting ? 'Removing…' : 'Remove'}
-                        onClick={handleDeleteConfirm}
-                        disabled={deleting}
-                        styles={{ root: { background: '#a4262c', borderColor: '#a4262c' } }}
-                    />
-                    <DefaultButton
-                        text="Cancel"
-                        onClick={() => setDeleteTarget(null)}
-                        disabled={deleting}
-                    />
-                </DialogFooter>
-            </Dialog>
+                title="Remove coaching record"
+                subText={deleteTarget
+                    ? `Remove the coaching record for ${deleteLabel} on ${deleteTarget.storeDate}? This cannot be undone.`
+                    : ''}
+                deleting={deleting}
+                deleteError={deleteError}
+                onConfirm={handleDeleteConfirm}
+                onDismiss={() => { if (!deleting) setDeleteTarget(null); }}
+            />
         </Stack>
     );
 };

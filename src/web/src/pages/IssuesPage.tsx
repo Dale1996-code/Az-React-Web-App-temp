@@ -1,18 +1,12 @@
 import { FC, ReactElement, useCallback, useEffect, useState } from 'react';
 import {
     DefaultButton,
-    Dialog,
-    DialogFooter,
-    DialogType,
     Dropdown,
     IDropdownOption,
     MessageBar,
     MessageBarType,
     Panel,
     PanelType,
-    PrimaryButton,
-    Spinner,
-    SpinnerSize,
     Stack,
     Text,
     TextField,
@@ -20,26 +14,29 @@ import {
 import { stackGaps, stackItemPadding, stackPadding } from '../ux/styles';
 import { IssueLog, IssueFormData, IssueStatus } from '../models/issue';
 import { getIssues, createIssue, updateIssue, deleteIssue } from '../services/issuesService';
-import { Employee } from '../models/employee';
-import { getEmployees } from '../services/employeesService';
+import { useCrudPanel } from '../hooks/useCrudPanel';
+import { useEmployees } from '../hooks/useEmployees';
+import { todayISO, ISO_DATE_RE } from '../utils/dateUtils';
+import ListState from '../components/ListState';
+import PanelFooter from '../components/PanelFooter';
+import DeleteDialog from '../components/DeleteDialog';
+import ErrorBar from '../components/ErrorBar';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-// Common retail/operations issue categories.
 const CATEGORY_OPTIONS: IDropdownOption[] = [
-    { key: 'Equipment failure',    text: 'Equipment failure' },
-    { key: 'Safety hazard',        text: 'Safety hazard' },
-    { key: 'Staff shortage',       text: 'Staff shortage' },
-    { key: 'Customer complaint',   text: 'Customer complaint' },
-    { key: 'Supplier / delivery',  text: 'Supplier / delivery' },
-    { key: 'Facility issue',       text: 'Facility issue' },
-    { key: 'Process / policy',     text: 'Process / policy' },
-    { key: 'Inventory discrepancy',text: 'Inventory discrepancy' },
-    { key: 'IT / system',          text: 'IT / system' },
-    { key: 'Other',                text: 'Other' },
+    { key: 'Equipment failure',     text: 'Equipment failure' },
+    { key: 'Safety hazard',         text: 'Safety hazard' },
+    { key: 'Staff shortage',        text: 'Staff shortage' },
+    { key: 'Customer complaint',    text: 'Customer complaint' },
+    { key: 'Supplier / delivery',   text: 'Supplier / delivery' },
+    { key: 'Facility issue',        text: 'Facility issue' },
+    { key: 'Process / policy',      text: 'Process / policy' },
+    { key: 'Inventory discrepancy', text: 'Inventory discrepancy' },
+    { key: 'IT / system',           text: 'IT / system' },
+    { key: 'Other',                 text: 'Other' },
 ];
 
-// Common retail departments.
 const DEPARTMENT_OPTIONS: IDropdownOption[] = [
     { key: 'Front End',           text: 'Front End' },
     { key: 'Grocery',             text: 'Grocery' },
@@ -66,17 +63,10 @@ const STATUS_FILTER_OPTIONS: IDropdownOption[] = [
     { key: 'resolved', text: 'Resolved' },
 ];
 
-// Status display colours matching the app's neutral palette.
 const STATUS_COLORS: Record<string, string> = {
-    open:     '#d83b01', // orange-red
-    resolved: '#107c10', // green
+    open:     '#d83b01',
+    resolved: '#107c10',
 };
-
-// ── Helpers ────────────────────────────────────────────────────────────────────
-
-function todayISO(): string {
-    return new Date().toISOString().split('T')[0];
-}
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -106,7 +96,7 @@ const emptyForm = (date?: string): FormState => ({
 
 type IssueRowProps = {
     issue: IssueLog;
-    employeeMap: Map<string, Employee>;
+    employeeMap: Map<string, { firstName: string; lastName: string }>;
     onEdit: (issue: IssueLog) => void;
     onDelete: (issue: IssueLog) => void;
     onResolve: (issue: IssueLog) => void;
@@ -311,7 +301,6 @@ const IssueForm: FC<IssueFormProps> = ({
                 placeholder="Select employee (optional)…"
             />
 
-            {/* Resolution fields — only relevant when resolving */}
             <TextField
                 label="Resolved at"
                 value={form.resolvedAt}
@@ -339,48 +328,25 @@ const IssuesPage: FC = (): ReactElement => {
     const [loading, setLoading] = useState(true);
     const [listError, setListError] = useState<string | null>(null);
 
-    // Filters — status defaults to 'open' so the list is actionable at a glance.
     const [filterDate, setFilterDate] = useState('');
     const [filterStatus, setFilterStatus] = useState('open');
     const [filterDept, setFilterDept] = useState('');
     const [filterCategory, setFilterCategory] = useState('');
 
-    // Employee lookup for display + dropdown.
-    const [employeeMap, setEmployeeMap] = useState<Map<string, Employee>>(new Map());
-    const [employeeOptions, setEmployeeOptions] = useState<IDropdownOption[]>([]);
+    const { employeeMap, employeeOptions } = useEmployees();
 
-    // Panel state
-    const [panelOpen, setPanelOpen] = useState(false);
-    const [editing, setEditing] = useState<IssueLog | null>(null);
-    const [form, setForm] = useState<FormState>(emptyForm());
-    const [formErrors, setFormErrors] = useState<Partial<Record<keyof FormState, string>>>({});
-    const [saving, setSaving] = useState(false);
-    const [saveError, setSaveError] = useState<string | null>(null);
-
-    // Delete dialog
-    const [deleteTarget, setDeleteTarget] = useState<IssueLog | null>(null);
-    const [deleting, setDeleting] = useState(false);
-    const [deleteError, setDeleteError] = useState<string | null>(null);
-
-    // ── Load employees once ────────────────────────────────────────────────────
-
-    useEffect(() => {
-        getEmployees({ active: true }).then(list => {
-            const map = new Map<string, Employee>();
-            const opts: IDropdownOption[] = [];
-            list.forEach(emp => {
-                map.set(emp.id, emp);
-                opts.push({
-                    key: emp.id,
-                    text: `${emp.firstName} ${emp.lastName}${emp.department ? ` (${emp.department})` : ''}`,
-                });
-            });
-            setEmployeeMap(map);
-            setEmployeeOptions(opts);
-        }).catch(() => {
-            // Non-fatal — reporter name will fall back to ID if this fails.
-        });
-    }, []);
+    const {
+        panelOpen, setPanelOpen,
+        editing,
+        form,
+        formErrors, setFormErrors,
+        saving, setSaving,
+        saveError, setSaveError,
+        deleteTarget, setDeleteTarget,
+        deleting, setDeleting,
+        deleteError, setDeleteError,
+        openCreate, openEdit, closePanel, updateForm,
+    } = useCrudPanel<IssueLog, FormState>(emptyForm());
 
     // ── Load issues ────────────────────────────────────────────────────────────
 
@@ -413,17 +379,8 @@ const IssuesPage: FC = (): ReactElement => {
 
     // ── Panel helpers ──────────────────────────────────────────────────────────
 
-    const openCreate = () => {
-        setEditing(null);
-        setForm(emptyForm(filterDate || todayISO()));
-        setFormErrors({});
-        setSaveError(null);
-        setPanelOpen(true);
-    };
-
-    const openEdit = (issue: IssueLog) => {
-        setEditing(issue);
-        setForm({
+    const handleOpenEdit = (issue: IssueLog) => {
+        openEdit(issue, {
             storeDate:            issue.storeDate,
             category:             issue.category,
             status:               issue.status,
@@ -433,27 +390,9 @@ const IssuesPage: FC = (): ReactElement => {
             resolvedAt:           issue.resolvedAt ?? '',
             resolutionNotes:      issue.resolutionNotes ?? '',
         });
-        setFormErrors({});
-        setSaveError(null);
-        setPanelOpen(true);
     };
 
-    const closePanel = () => {
-        if (saving) return;
-        setPanelOpen(false);
-    };
-
-    const updateForm = (updates: Partial<FormState>) => {
-        setForm(prev => ({ ...prev, ...updates }));
-        // Clear field-level errors as the user types.
-        const cleared = { ...formErrors };
-        (Object.keys(updates) as (keyof FormState)[]).forEach(k => delete cleared[k]);
-        setFormErrors(cleared);
-    };
-
-    // ── Client-side validation ─────────────────────────────────────────────────
-
-    const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+    // ── Validation ─────────────────────────────────────────────────────────────
 
     const validateForm = (): boolean => {
         const errs: Partial<Record<keyof FormState, string>> = {};
@@ -484,9 +423,9 @@ const IssuesPage: FC = (): ReactElement => {
             status:      form.status,
             department:  form.department.trim(),
             description: form.description.trim(),
-            ...(form.reportedByEmployeeId && { reportedByEmployeeId: form.reportedByEmployeeId }),
-            ...(form.resolvedAt           && { resolvedAt:           form.resolvedAt }),
-            ...(form.resolutionNotes.trim() && { resolutionNotes:    form.resolutionNotes.trim() }),
+            ...(form.reportedByEmployeeId   && { reportedByEmployeeId: form.reportedByEmployeeId }),
+            ...(form.resolvedAt             && { resolvedAt:           form.resolvedAt }),
+            ...(form.resolutionNotes.trim() && { resolutionNotes:      form.resolutionNotes.trim() }),
         };
 
         try {
@@ -506,7 +445,6 @@ const IssuesPage: FC = (): ReactElement => {
 
     // ── Quick-resolve ──────────────────────────────────────────────────────────
 
-    // One-click status change from open → resolved, stamping resolvedAt automatically.
     const handleResolve = async (issue: IssueLog) => {
         try {
             await updateIssue(issue.id, {
@@ -536,7 +474,6 @@ const IssuesPage: FC = (): ReactElement => {
         }
     };
 
-    // Category filter options with "All" prepended.
     const categoryFilterOptions: IDropdownOption[] = [
         { key: '', text: 'All categories' },
         ...CATEGORY_OPTIONS,
@@ -567,10 +504,11 @@ const IssuesPage: FC = (): ReactElement => {
                         </Text>
                     </Stack.Item>
                     <Stack.Item>
-                        <PrimaryButton
+                        <DefaultButton
                             text="Log Issue"
                             iconProps={{ iconName: 'Add' }}
-                            onClick={openCreate}
+                            onClick={() => openCreate(emptyForm(filterDate || todayISO()))}
+                            primary
                         />
                     </Stack.Item>
                 </Stack>
@@ -618,62 +556,40 @@ const IssuesPage: FC = (): ReactElement => {
             {/* List error */}
             {listError && (
                 <Stack.Item tokens={stackItemPadding}>
-                    <MessageBar
-                        messageBarType={MessageBarType.error}
-                        onDismiss={() => setListError(null)}
-                        dismissButtonAriaLabel="Dismiss"
-                    >
-                        {listError}
-                    </MessageBar>
+                    <ErrorBar message={listError} onDismiss={() => setListError(null)} />
                 </Stack.Item>
             )}
 
             {/* Issues list */}
             <Stack.Item tokens={stackItemPadding}>
-                {loading ? (
-                    <Stack horizontalAlign="center" style={{ padding: 40 }}>
-                        <Spinner size={SpinnerSize.large} label="Loading issues…" />
-                    </Stack>
-                ) : issues.length === 0 ? (
-                    <Stack
-                        horizontalAlign="center"
-                        style={{
-                            padding: 40,
-                            border: '1px dashed #c8c6c4',
-                            borderRadius: 4,
-                        }}
-                    >
-                        <Text variant="large" style={{ color: '#605e5c', marginBottom: 8 }}>
-                            No issues found.
-                        </Text>
-                        <DefaultButton
-                            text="Log first issue"
-                            iconProps={{ iconName: 'Add' }}
-                            onClick={openCreate}
-                        />
-                    </Stack>
-                ) : (
-                    <Stack
-                        styles={{
-                            root: {
-                                border: '1px solid #edebe9',
-                                borderRadius: 4,
-                                overflow: 'hidden',
-                            },
-                        }}
-                    >
-                        {issues.map(issue => (
-                            <IssueRow
-                                key={issue.id}
-                                issue={issue}
-                                employeeMap={employeeMap}
-                                onEdit={openEdit}
-                                onDelete={setDeleteTarget}
-                                onResolve={handleResolve}
+                <ListState
+                    loading={loading}
+                    loadingLabel="Loading issues…"
+                    empty={issues.length === 0}
+                    emptyContent={
+                        <>
+                            <Text variant="large" style={{ color: '#605e5c', marginBottom: 8 }}>
+                                No issues found.
+                            </Text>
+                            <DefaultButton
+                                text="Log first issue"
+                                iconProps={{ iconName: 'Add' }}
+                                onClick={() => openCreate(emptyForm(filterDate || todayISO()))}
                             />
-                        ))}
-                    </Stack>
-                )}
+                        </>
+                    }
+                >
+                    {issues.map(issue => (
+                        <IssueRow
+                            key={issue.id}
+                            issue={issue}
+                            employeeMap={employeeMap}
+                            onEdit={handleOpenEdit}
+                            onDelete={setDeleteTarget}
+                            onResolve={handleResolve}
+                        />
+                    ))}
+                </ListState>
             </Stack.Item>
 
             {/* Record count */}
@@ -692,18 +608,7 @@ const IssuesPage: FC = (): ReactElement => {
                 type={PanelType.smallFixedFar}
                 headerText={editing ? 'Edit Issue' : 'Log New Issue'}
                 onRenderFooterContent={() => (
-                    <Stack
-                        horizontal
-                        tokens={{ childrenGap: 8 }}
-                        style={{ padding: '16px 0' }}
-                    >
-                        <PrimaryButton
-                            text={saving ? 'Saving…' : 'Save'}
-                            onClick={handleSave}
-                            disabled={saving}
-                        />
-                        <DefaultButton text="Cancel" onClick={closePanel} disabled={saving} />
-                    </Stack>
+                    <PanelFooter saving={saving} onSave={handleSave} onCancel={closePanel} />
                 )}
                 isFooterAtBottom
             >
@@ -727,40 +632,17 @@ const IssuesPage: FC = (): ReactElement => {
             </Panel>
 
             {/* Delete confirmation dialog */}
-            <Dialog
+            <DeleteDialog
                 hidden={!deleteTarget}
-                onDismiss={() => !deleting && setDeleteTarget(null)}
-                dialogContentProps={{
-                    type: DialogType.normal,
-                    title: 'Remove issue',
-                    subText: deleteTarget
-                        ? `Remove the "${deleteTarget.category}" issue from ${deleteTarget.storeDate}? This cannot be undone.`
-                        : '',
-                }}
-                modalProps={{ isBlocking: true }}
-            >
-                {deleteError && (
-                    <MessageBar
-                        messageBarType={MessageBarType.error}
-                        styles={{ root: { marginBottom: 8 } }}
-                    >
-                        {deleteError}
-                    </MessageBar>
-                )}
-                <DialogFooter>
-                    <PrimaryButton
-                        text={deleting ? 'Removing…' : 'Remove'}
-                        onClick={handleDeleteConfirm}
-                        disabled={deleting}
-                        styles={{ root: { background: '#a4262c', borderColor: '#a4262c' } }}
-                    />
-                    <DefaultButton
-                        text="Cancel"
-                        onClick={() => setDeleteTarget(null)}
-                        disabled={deleting}
-                    />
-                </DialogFooter>
-            </Dialog>
+                title="Remove issue"
+                subText={deleteTarget
+                    ? `Remove the "${deleteTarget.category}" issue from ${deleteTarget.storeDate}? This cannot be undone.`
+                    : ''}
+                deleting={deleting}
+                deleteError={deleteError}
+                onConfirm={handleDeleteConfirm}
+                onDismiss={() => { if (!deleting) setDeleteTarget(null); }}
+            />
         </Stack>
     );
 };

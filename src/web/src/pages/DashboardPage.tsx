@@ -98,7 +98,7 @@ function formatDate(iso: string): string {
 }
 
 function todayIso(): string {
-    return new Date().toISOString().slice(0, 10);
+    return new Date().toISOString().split('T')[0];
 }
 
 function truncate(text: string, max: number): string {
