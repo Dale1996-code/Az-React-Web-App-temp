@@ -83,11 +83,25 @@ Before running `azd up` for the first time, confirm the following:
 2. `azd up` — prompts for environment name, subscription, and region, then provisions infrastructure and deploys both services
    - Pick a region where B1 Linux App Service and Cosmos DB serverless are available (East US, West Europe, and North Europe are reliable choices)
    - First provision takes 5–10 minutes; subsequent `azd deploy` runs are ~2 minutes
-3. After `azd up` finishes, run `azd env get-values` and confirm `SERVICE_WEB_URI` and `SERVICE_API_URI` are both present
-4. Open `SERVICE_WEB_URI` in a browser — the app loads with 7 navigation links and the Shift Overview section is visible (confirms end-to-end API connectivity)
+3. **Required post-provision step — set Entra ID auth settings on the API App Service.** `AZURE_AD_TENANT_ID` and `AZURE_AD_CLIENT_ID` are **not** provisioned by Bicep (the App Registration is a separate, pre-existing artefact) and the API will refuse to start in production until both are present. Set them once per environment:
+
+   ```bash
+   API_APP=$(azd env get-values | grep '^SERVICE_API_NAME=' | cut -d'=' -f2- | tr -d '"')
+   RG=$(azd env get-values | grep '^AZURE_RESOURCE_GROUP=' | cut -d'=' -f2- | tr -d '"')
+
+   az webapp config appsettings set \
+     --name "$API_APP" --resource-group "$RG" \
+     --settings \
+       AZURE_AD_TENANT_ID=<tenant-guid> \
+       AZURE_AD_CLIENT_ID=<api-app-registration-client-id>
+   ```
+
+   See [Authentication](#authentication) below for where to find each value.
+4. After `azd up` finishes, run `azd env get-values` and confirm `SERVICE_WEB_URI` and `SERVICE_API_URI` are both present
+5. Open `SERVICE_WEB_URI` in a browser — the app loads with 7 navigation links and the Shift Overview section is visible (confirms end-to-end API connectivity)
 
 **Set up CI/CD (recommended)**
-5. `azd pipeline config` — creates OIDC federated credentials and sets the required GitHub Actions variables (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_ENV_NAME`, `AZURE_LOCATION`) on your fork; subsequent pushes to `main`/`master` trigger the full pipeline automatically
+6. `azd pipeline config` — creates OIDC federated credentials and sets the required GitHub Actions variables (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_ENV_NAME`, `AZURE_LOCATION`) on your fork; subsequent pushes to `main`/`master` trigger the full pipeline automatically
 
 ---
 
@@ -245,14 +259,27 @@ CI enforces this: the "Verify OpenAPI spec sync" step diffs the two files and fa
 
 All business API endpoints (`/employees`, `/tasks`, `/dashboard`, etc.) require an Azure Entra ID Bearer JWT in the `Authorization: Bearer <token>` header.
 
-**In production** (`NODE_ENV=production`): two App Service settings must be configured:
+**In production** (`NODE_ENV=production`): two App Service settings must be configured **manually after `azd provision`**. They are intentionally not set by Bicep — the Entra ID App Registration that represents the API is a separate, pre-existing artefact, so its IDs are environment-specific and cannot be derived from infrastructure outputs.
 
 | Setting | Where to find it |
 |---|---|
 | `AZURE_AD_TENANT_ID` | Azure Portal → Entra ID → Overview → Tenant ID |
 | `AZURE_AD_CLIENT_ID` | Azure Portal → Entra ID → App registrations → your API app → Application (client) ID |
 
-The API will refuse to start in production if either value is missing.
+Set them with the Azure CLI (the API restarts automatically when app settings change):
+
+```bash
+API_APP=$(azd env get-values | grep '^SERVICE_API_NAME=' | cut -d'=' -f2- | tr -d '"')
+RG=$(azd env get-values | grep '^AZURE_RESOURCE_GROUP=' | cut -d'=' -f2- | tr -d '"')
+
+az webapp config appsettings set \
+  --name "$API_APP" --resource-group "$RG" \
+  --settings \
+    AZURE_AD_TENANT_ID=<tenant-guid> \
+    AZURE_AD_CLIENT_ID=<api-app-registration-client-id>
+```
+
+The API will refuse to start in production if either value is missing — the App Service log stream will show a `Startup aborted — required configuration is missing or invalid` message naming the missing variable.
 
 **In local development** (`NODE_ENV=development` or `test`): auth is bypassed automatically with a startup warning. No Azure AD credentials are needed locally.
 

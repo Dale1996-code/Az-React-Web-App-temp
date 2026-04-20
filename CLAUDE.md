@@ -78,7 +78,7 @@ Tests all live in `src/routes/routes.spec.ts` and use `supertest` against the re
 
 - **`App.tsx` → `layout/layout.tsx`** — `ThemeProvider` (dark Fluent theme) → `BrowserRouter` → `Telemetry` wrapper → `Layout`. The layout defines all routes: `/`, `/employees`, `/tasks`, `/productivity`, `/coaching`, `/issues`, `/summary`, plus `*` → `Navigate to="/"`. Sidebar open/close state lives in `Layout`.
 - **`services/apiClient.ts`** — a single axios instance with `baseURL = config.api.baseUrl` (from `VITE_API_BASE_URL`, defaulting to `http://localhost:3100`). Every `*Service.ts` imports this and exposes typed CRUD functions matching the API routes.
-- **`components/telemetry.tsx`** — App Insights is enabled only if `VITE_APPLICATIONINSIGHTS_CONNECTION_STRING` is set; otherwise `telemetry.tsx` renders children unchanged.
+- **`components/telemetry.tsx`** — always wraps children in the `TelemetryProvider`. On mount it calls `getApplicationInsights()` in `services/telemetryService.ts`, which short-circuits and returns `undefined` if `VITE_APPLICATIONINSIGHTS_CONNECTION_STRING` is missing or blank — so no SDK is constructed and `trackEvent` becomes a no-op. When the connection string is present the SDK loads once and is cached.
 - **Pages** — one page per collection under `pages/`, all following the same Fluent UI pattern (list + Panel for create/edit + Dialog for confirm). Each page owns its own data-fetching via the matching `services/*Service.ts`.
 
 Vite env vars **must** be prefixed `VITE_`. The `VITE_API_BASE_URL` value must include a scheme (`http://` or `https://`).
@@ -95,4 +95,3 @@ Vite env vars **must** be prefixed `VITE_`. The `VITE_API_BASE_URL` value must i
 - API returns `201` + `Location` header on create, `204` on delete, `404` with empty body on missing id, `400 { error, details }` on validation failure, `500 { error: "Internal server error" }` on unexpected errors.
 - Validators use an allowlist — if you add a new field to a model, you must also add it to the corresponding `validate*` function or it will be silently dropped on writes.
 - The root-level `openapi.yaml` is a copy of `src/api/openapi.yaml` kept in sync for tooling discovery — update both when changing the API surface.
-- Work on branch `claude/add-claude-documentation-4U2OI` per the task instructions for this repo.

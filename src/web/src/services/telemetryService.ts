@@ -8,17 +8,25 @@ const plugin = new ReactPlugin();
 let applicationInsights: ApplicationInsights;
 export const reactPlugin = plugin;
 
-export const getApplicationInsights = (): ApplicationInsights => {
-    const browserHistory = createBrowserHistory({ window: window });
+export const getApplicationInsights = (): ApplicationInsights | undefined => {
     if (applicationInsights) {
         return applicationInsights;
     }
 
+    // Skip initialization when no connection string is configured. The SDK will
+    // otherwise attempt to load with an empty endpoint and emit noisy console
+    // errors on every page load — telemetry is opt-in via VITE_APPLICATIONINSIGHTS_CONNECTION_STRING.
+    const connectionString = config.observability.connectionString?.trim();
+    if (!connectionString) {
+        return undefined;
+    }
+
+    const browserHistory = createBrowserHistory({ window: window });
     const ApplicationInsightsConfig: Snippet = {
         config: {
-            connectionString: config.observability.connectionString,
+            connectionString,
             enableCorsCorrelation: true,
-            distributedTracingMode: DistributedTracingModes.W3C, 
+            distributedTracingMode: DistributedTracingModes.W3C,
             extensions: [plugin],
             extensionConfig: {
                 [plugin.identifier]: { history: browserHistory }
@@ -38,8 +46,7 @@ export const getApplicationInsights = (): ApplicationInsights => {
             }
         });
     } catch(err) {
-        // TODO - proper logging for web
-        console.error("ApplicationInsights setup failed, ensure environment variable 'VITE_APPLICATIONINSIGHTS_CONNECTION_STRING' has been set.", err);
+        console.error("ApplicationInsights setup failed despite a connection string being present.", err);
     }
 
     return applicationInsights;
