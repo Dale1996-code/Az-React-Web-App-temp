@@ -43,8 +43,11 @@ test.describe("Dashboard route", () => {
 
     test("shows summary cards or loading state", async ({ page }) => {
         await page.goto("/");
+        // The loading label must match DashboardPage.tsx. "Active Employees"
+        // appears only after the /dashboard API call resolves — accepting
+        // either keeps this route-shell check non-flaky on slow backends.
         await expect(
-            page.getByText("Loading summary…").or(
+            page.getByText("Loading dashboard…").or(
                 page.getByText("Active Employees")
             ).first()
         ).toBeVisible({ timeout: 10000 });
