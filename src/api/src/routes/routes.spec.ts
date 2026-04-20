@@ -349,7 +349,7 @@ describe("Dales Operations API", () => {
         });
 
         it("POST /issues returns 400 when description is missing", async () => {
-            const { description, ...noDesc } = validIssue;
+            const { description: _description, ...noDesc } = validIssue;
             const res = await post("/issues", noDesc);
             expect(res.status).toBe(400);
             expect(res.body.details).toEqual(expect.arrayContaining([expect.stringContaining("description")]));
@@ -362,7 +362,7 @@ describe("Dales Operations API", () => {
         });
 
         it("POST /issues returns 400 when category is missing", async () => {
-            const { category, ...noCat } = validIssue;
+            const { category: _category, ...noCat } = validIssue;
             const res = await post("/issues", noCat);
             expect(res.status).toBe(400);
             expect(res.body.details).toEqual(expect.arrayContaining([expect.stringContaining("category")]));

@@ -1,4 +1,4 @@
-import { AppConfig, AuthConfig, DatabaseConfig, ObservabilityConfig } from "./appConfig";
+import { AppConfig, DatabaseConfig, ObservabilityConfig } from "./appConfig";
 import dotenv from "dotenv";
 import { DefaultAzureCredential } from "@azure/identity";
 import { SecretClient } from "@azure/keyvault-secrets";

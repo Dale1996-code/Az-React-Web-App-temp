@@ -1,5 +1,4 @@
-import { PlaywrightTestConfig } from "@playwright/test";
-import devices from "@playwright/test";
+import { defineConfig, devices } from "@playwright/test";
 import fs from "fs";
 import { join } from "path";
 import dotenv from "dotenv";
@@ -7,7 +6,7 @@ import dotenv from "dotenv";
 /**
  * See https://playwright.dev/docs/test-configuration.
  */
-const config: PlaywrightTestConfig = {
+export default defineConfig({
   testDir: ".",
   timeout: 30 * 1000,
   expect: {
@@ -41,7 +40,7 @@ const config: PlaywrightTestConfig = {
       },
     },
   ],
-};
+});
 
 function getBaseURL() {
   // If we don't have URL and aren't in CI, then try to load from environment
@@ -73,5 +72,3 @@ function getBaseURL() {
   console.log("baseUrl: " + baseURL);
   return baseURL;
 }
-
-export default config;

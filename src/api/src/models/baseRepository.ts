@@ -49,26 +49,26 @@ function condToSql(cond: FilterCondition, acc: ParamAcc): string {
         return name;
     };
     switch (cond.op) {
-        case "eq":   return `c.${cond.field} = ${add(cond.value)}`;
-        case "neq":  return `c.${cond.field} != ${add(cond.value)}`;
-        case "lt":   return `c.${cond.field} < ${add(cond.value)}`;
-        case "lte":  return `c.${cond.field} <= ${add(cond.value)}`;
-        case "gt":   return `c.${cond.field} > ${add(cond.value)}`;
-        case "gte":  return `c.${cond.field} >= ${add(cond.value)}`;
-        case "eq_ci": {
-            const p = add(cond.value.toLowerCase());
-            return `LOWER(c.${cond.field}) = ${p}`;
-        }
-        case "contains_ci": {
-            const p = add(cond.value.toLowerCase());
-            return `CONTAINS(LOWER(c.${cond.field}), ${p})`;
-        }
-        case "is_defined":
-            return `(IS_DEFINED(c.${cond.field}) AND NOT IS_NULL(c.${cond.field}))`;
-        case "or": {
-            const parts = cond.conditions.map(c => condToSql(c, acc));
-            return `(${parts.join(" OR ")})`;
-        }
+    case "eq":   return `c.${cond.field} = ${add(cond.value)}`;
+    case "neq":  return `c.${cond.field} != ${add(cond.value)}`;
+    case "lt":   return `c.${cond.field} < ${add(cond.value)}`;
+    case "lte":  return `c.${cond.field} <= ${add(cond.value)}`;
+    case "gt":   return `c.${cond.field} > ${add(cond.value)}`;
+    case "gte":  return `c.${cond.field} >= ${add(cond.value)}`;
+    case "eq_ci": {
+        const p = add(cond.value.toLowerCase());
+        return `LOWER(c.${cond.field}) = ${p}`;
+    }
+    case "contains_ci": {
+        const p = add(cond.value.toLowerCase());
+        return `CONTAINS(LOWER(c.${cond.field}), ${p})`;
+    }
+    case "is_defined":
+        return `(IS_DEFINED(c.${cond.field}) AND NOT IS_NULL(c.${cond.field}))`;
+    case "or": {
+        const parts = cond.conditions.map(c => condToSql(c, acc));
+        return `(${parts.join(" OR ")})`;
+    }
     }
 }
 
@@ -104,16 +104,16 @@ function buildCountSql(conditions: FilterCondition[]): { query: string; paramete
 
 function evalCond(item: Record<string, unknown>, cond: FilterCondition): boolean {
     switch (cond.op) {
-        case "eq":          return item[cond.field] === cond.value;
-        case "neq":         return item[cond.field] !== cond.value;
-        case "lt":          return (item[cond.field] as string | number) < cond.value;
-        case "lte":         return (item[cond.field] as string | number) <= cond.value;
-        case "gt":          return (item[cond.field] as string | number) > cond.value;
-        case "gte":         return (item[cond.field] as string | number) >= cond.value;
-        case "eq_ci":       { const v = item[cond.field]; return typeof v === "string" && v.toLowerCase() === cond.value.toLowerCase(); }
-        case "contains_ci": { const v = item[cond.field]; return typeof v === "string" && v.toLowerCase().includes(cond.value.toLowerCase()); }
-        case "is_defined":  return item[cond.field] !== undefined && item[cond.field] !== null;
-        case "or":          return cond.conditions.some(c => evalCond(item, c));
+    case "eq":          return item[cond.field] === cond.value;
+    case "neq":         return item[cond.field] !== cond.value;
+    case "lt":          return (item[cond.field] as string | number) < cond.value;
+    case "lte":         return (item[cond.field] as string | number) <= cond.value;
+    case "gt":          return (item[cond.field] as string | number) > cond.value;
+    case "gte":         return (item[cond.field] as string | number) >= cond.value;
+    case "eq_ci":       { const v = item[cond.field]; return typeof v === "string" && v.toLowerCase() === cond.value.toLowerCase(); }
+    case "contains_ci": { const v = item[cond.field]; return typeof v === "string" && v.toLowerCase().includes(cond.value.toLowerCase()); }
+    case "is_defined":  return item[cond.field] !== undefined && item[cond.field] !== null;
+    case "or":          return cond.conditions.some(c => evalCond(item, c));
     }
 }
 

@@ -127,7 +127,7 @@ function validateSignature(
     });
     const verifier = createVerify("RSA-SHA256");
     verifier.update(`${headerB64}.${payloadB64}`);
-    if (!verifier.verify(publicKey, base64urlToBuffer(signatureB64))) {
+    if (!verifier.verify(publicKey, base64urlToBuffer(signatureB64).toString("hex"), "hex")) {
         throw new Error("Signature verification failed");
     }
 }
