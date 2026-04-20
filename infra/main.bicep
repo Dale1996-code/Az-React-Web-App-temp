@@ -257,3 +257,9 @@ output API_BASE_URL string = useAPIM ? apimApi.outputs.serviceApiUri : api.outpu
 output REACT_APP_WEB_BASE_URL string = web.outputs.SERVICE_WEB_URI
 output USE_APIM bool = useAPIM
 output SERVICE_API_ENDPOINTS array = useAPIM ? [ apimApi.outputs.serviceApiUri, api.outputs.SERVICE_API_URI ]: []
+
+// Surfaced so the post-provision Entra ID app-settings step in README.md
+// (`az webapp config appsettings set --name $SERVICE_API_NAME ...`) is
+// copy-pasteable without portal lookups.
+output SERVICE_API_NAME string = api.outputs.SERVICE_API_NAME
+output AZURE_RESOURCE_GROUP string = rg.name

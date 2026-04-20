@@ -208,6 +208,11 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/ApiError" }
 
+  headers:
+    Location:
+      description: Relative URL of the newly created resource (e.g. `/employees/<id>`).
+      schema: { type: string }
+
 paths:
   # ---------- System ----------
   /health:
@@ -302,6 +307,8 @@ paths:
       responses:
         "201":
           description: Employee created
+          headers:
+            Location: { $ref: "#/components/headers/Location" }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Employee" }
@@ -369,6 +376,8 @@ paths:
       responses:
         "201":
           description: Task created
+          headers:
+            Location: { $ref: "#/components/headers/Location" }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Task" }
@@ -436,6 +445,8 @@ paths:
       responses:
         "201":
           description: Created
+          headers:
+            Location: { $ref: "#/components/headers/Location" }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ProductivityRecord" }
@@ -503,6 +514,8 @@ paths:
       responses:
         "201":
           description: Created
+          headers:
+            Location: { $ref: "#/components/headers/Location" }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CoachingRecord" }
@@ -570,6 +583,8 @@ paths:
       responses:
         "201":
           description: Created
+          headers:
+            Location: { $ref: "#/components/headers/Location" }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/IssueLog" }
@@ -637,6 +652,8 @@ paths:
       responses:
         "201":
           description: Created
+          headers:
+            Location: { $ref: "#/components/headers/Location" }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/DailySummary" }
