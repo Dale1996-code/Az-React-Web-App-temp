@@ -145,11 +145,27 @@ azd pipeline config          # GitHub Actions (default)
 
 ### Azure DevOps alternative
 
-A minimal Azure DevOps pipeline exists at `.azdo/pipelines/azure-dev.yml` for
-teams that cannot use GitHub Actions. It provisions and deploys via `azd` but
-**intentionally skips** API tests, the web build step, and Playwright smoke
-tests. Do not treat it as equivalent to the GitHub Actions workflow without
-first adding those steps.
+A secondary Azure DevOps pipeline exists at `.azdo/pipelines/azure-dev.yml` for
+teams that cannot use GitHub Actions. It runs the following quality gates before
+provisioning and deploying:
+
+- OpenAPI spec sync check
+- API unit/integration tests (`npm test`)
+- API build (`npm run build`)
+
+The following steps from the GitHub Actions workflow are **intentionally absent**
+because they depend on infrastructure outputs that are unavailable before
+`azd provision` runs, or require tooling that is impractical in a minimal ADO
+pipeline:
+
+| Step | Reason absent |
+|---|---|
+| Frontend build step | Requires `VITE_API_BASE_URL` from `azd provision` output |
+| Playwright smoke tests | Requires deployed URLs and a Playwright-capable agent pool |
+| Playwright report upload | Depends on the smoke test step |
+
+If this pipeline becomes your primary production path, add those steps. See the
+comments at the top of `.azdo/pipelines/azure-dev.yml` for details.
 
 Configure it with:
 
