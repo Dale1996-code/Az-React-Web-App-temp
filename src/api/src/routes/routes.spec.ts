@@ -475,6 +475,62 @@ describe("Dales Operations API", () => {
             expect(res.status).toBe(200);
             expect(res.body.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
         });
+
+        // Empty-database safety: the deployed app must not throw, 500, or omit
+        // any field that the frontend destructures when the requested day has
+        // no data of any kind. This is the shape the Dashboard page relies on.
+        it("GET /dashboard returns the full shape (all keys defined) on empty DB", async () => {
+            const res = await get(`/dashboard?date=${DATE}`);
+            expect(res.status).toBe(200);
+            expect(res.body).toEqual({
+                date: DATE,
+                taskCounts: { notStarted: 0, inProgress: 0, completed: 0 },
+                urgentTasks: [],
+                openIssuesCount: 0,
+                recentOpenIssues: [],
+                coachingFollowUpsDueCount: 0,
+                upcomingFollowUps: [],
+                activeEmployeesCount: 0,
+                productivitySnapshot: { recordsLogged: 0, totalUnitsStocked: 0 },
+                latestSummary: null,
+            });
+        });
+
+        it("GET /dashboard sums productivitySnapshot.totalUnitsStocked for the date", async () => {
+            await post("/productivity", { employeeId: "e1", storeDate: DATE, freightStockedUnits: 10 });
+            await post("/productivity", { employeeId: "e2", storeDate: DATE, freightStockedUnits: 25 });
+            // Record on a different date must not leak into today's total.
+            await post("/productivity", { employeeId: "e3", storeDate: "2026-04-14", freightStockedUnits: 99 });
+            const res = await get(`/dashboard?date=${DATE}`);
+            expect(res.status).toBe(200);
+            expect(res.body.productivitySnapshot.recordsLogged).toBe(2);
+            expect(res.body.productivitySnapshot.totalUnitsStocked).toBe(35);
+        });
+
+        it("GET /dashboard urgentTasks only includes high-priority, incomplete tasks for the date", async () => {
+            // Should appear: high + notStarted on DATE
+            await post("/tasks", { title: "Urgent A", status: "notStarted", storeDate: DATE, department: "Grocery", priority: "high" });
+            // Should appear: high + inProgress on DATE
+            await post("/tasks", { title: "Urgent B", status: "inProgress", storeDate: DATE, department: "Grocery", priority: "high" });
+            // Should NOT appear: high but completed
+            await post("/tasks", { title: "Done",     status: "completed",  storeDate: DATE, department: "Grocery", priority: "high" });
+            // Should NOT appear: low priority
+            await post("/tasks", { title: "Low",      status: "notStarted", storeDate: DATE, department: "Grocery", priority: "low" });
+            // Should NOT appear: different date
+            await post("/tasks", { title: "Other",    status: "notStarted", storeDate: "2026-04-14", department: "Grocery", priority: "high" });
+            const res = await get(`/dashboard?date=${DATE}`);
+            expect(res.status).toBe(200);
+            const titles = res.body.urgentTasks.map((t: { title: string }) => t.title).sort();
+            expect(titles).toEqual(["Urgent A", "Urgent B"]);
+        });
+
+        it("GET /dashboard rejects malformed date parameters by falling back to today", async () => {
+            // Invalid date must not 500 — the route silently falls back to today.
+            const res = await get("/dashboard?date=not-a-date");
+            expect(res.status).toBe(200);
+            expect(res.body.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+            expect(res.body.date).not.toBe("not-a-date");
+        });
     });
 
     // ---------------------------------------------------------------------------
@@ -486,6 +542,25 @@ describe("Dales Operations API", () => {
             expect(res.status).toBe(200);
             expect(res.body.status).toBe("ok");
             expect(res.body.timestamp).toBeDefined();
+        });
+
+        // Azure App Service health probes hit this path every minute and replace
+        // instances that fail consistently. Keep the contract tight.
+        it("GET /health returns an ISO timestamp and env field", async () => {
+            const res = await get("/health");
+            expect(res.status).toBe(200);
+            expect(typeof res.body.timestamp).toBe("string");
+            expect(res.body.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T.+Z$/);
+            expect(typeof res.body.env).toBe("string");
+        });
+
+        it("GET /health requires no auth and no request body", async () => {
+            // Sending garbage and an unexpected content-type must not break the probe.
+            const res = await request(app)
+                .get("/health")
+                .set("Content-Type", "application/octet-stream");
+            expect(res.status).toBe(200);
+            expect(res.body.status).toBe("ok");
         });
     });
 
