@@ -83,7 +83,7 @@ Before running `azd up` for the first time, confirm the following:
 2. `azd up` — prompts for environment name, subscription, and region, then provisions infrastructure and deploys both services
    - Pick a region where B1 Linux App Service and Cosmos DB serverless are available (East US, West Europe, and North Europe are reliable choices)
    - First provision takes 5–10 minutes; subsequent `azd deploy` runs are ~2 minutes
-3. **Required post-provision step — set Entra ID auth settings on the API App Service.** `AZURE_AD_TENANT_ID` and `AZURE_AD_CLIENT_ID` are **not** provisioned by Bicep (the App Registration is a separate, pre-existing artefact) and the API will refuse to start in production until both are present. Set them once per environment:
+3. **Optional pre-readiness step — set Entra ID auth settings on the API App Service.** `AZURE_AD_TENANT_ID` and `AZURE_AD_CLIENT_ID` are **not** provisioned by Bicep and are **not required for the current internal MVP** — the deployed API runs without `NODE_ENV=production`, so auth enforcement is bypassed and all endpoints are open. Set these now if you want the environment ready for production hardening later; they have no effect until `NODE_ENV=production` is also added to App Service config:
 
    ```bash
    API_APP=$(azd env get-values | grep '^SERVICE_API_NAME=' | cut -d'=' -f2- | tr -d '"')
@@ -257,9 +257,11 @@ CI enforces this: the "Verify OpenAPI spec sync" step diffs the two files and fa
 
 ## Authentication
 
-All business API endpoints (`/employees`, `/tasks`, `/dashboard`, etc.) require an Azure Entra ID Bearer JWT in the `Authorization: Bearer <token>` header.
+All business API endpoints (`/employees`, `/tasks`, `/dashboard`, etc.) are designed to require an Azure Entra ID Bearer JWT in the `Authorization: Bearer <token>` header — **but auth enforcement is not currently active in the deployed environment.**
 
-**In production** (`NODE_ENV=production`): two App Service settings must be configured **manually after `azd provision`**. They are intentionally not set by Bicep — the Entra ID App Registration that represents the API is a separate, pre-existing artefact, so its IDs are environment-specific and cannot be derived from infrastructure outputs.
+The Bicep configuration does not set `NODE_ENV=production`, so the deployed API runs with auth middleware in bypass mode: all endpoints accept requests without a token. This is intentional for the internal MVP phase while MSAL frontend integration (Phase 2) is not yet complete. You will see `Auth: enforcement disabled — all requests allowed` in the API log stream; this is the expected state.
+
+**To enable production auth hardening** (after MSAL is wired into the frontend), two App Service settings must be configured. They are intentionally not set by Bicep — the Entra ID App Registration that represents the API is a separate, pre-existing artefact, so its IDs are environment-specific and cannot be derived from infrastructure outputs:
 
 | Setting | Where to find it |
 |---|---|
@@ -279,13 +281,13 @@ az webapp config appsettings set \
     AZURE_AD_CLIENT_ID=<api-app-registration-client-id>
 ```
 
-The API will refuse to start in production if either value is missing — the App Service log stream will show a `Startup aborted — required configuration is missing or invalid` message naming the missing variable.
+Once `NODE_ENV=production` is set alongside these values, the API will refuse to start if either is missing — the App Service log stream will show a `Startup aborted — required configuration is missing or invalid` message naming the missing variable.
 
 **In local development** (`NODE_ENV=development` or `test`): auth is bypassed automatically with a startup warning. No Azure AD credentials are needed locally.
 
-The `/health` endpoint is always open (no auth) — it is used by Azure App Service deployment probes.
+**In the current deployed environment**: auth is also bypassed (see above). The `/health` endpoint is always open regardless.
 
-> The React frontend will need MSAL wired in to acquire tokens before it can call the API in a production deployment. Until that is done, the API is accessible only from contexts that can obtain an Entra ID token directly (e.g., server-side scripts, Postman with a bearer token). See [`src/api/README.md`](src/api/README.md) for configuration details.
+> **Phase 2 prerequisite:** The React frontend must have MSAL wired in to acquire and attach Bearer tokens before `NODE_ENV=production` can be safely enabled. Until then, enabling production auth would make all business endpoints return 401 to the frontend. See [`src/api/README.md`](src/api/README.md) for server-side configuration details.
 
 ## App Service Plan SKU and Cost
 
@@ -391,7 +393,7 @@ curl -s https://<api-url>/health | jq .
 | `[dashboard] GET /dashboard?date=… 500 – …` | Dashboard aggregation failure |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING is not set` warn | Telemetry disabled — check App Service app settings |
 | `Auth: Azure Entra ID JWT enforcement enabled (tenant=…)` | Auth middleware active in production |
-| `Auth: enforcement disabled — all requests allowed…` | Auth bypassed — expected in dev/test, unexpected in production |
+| `Auth: enforcement disabled — all requests allowed…` | Auth bypassed — expected in dev/test and in the current deployed environment (NODE_ENV not set to production); unexpected only after production auth hardening is enabled |
 | `Auth: token rejected – …` | 401 issued; message explains why (expired, bad aud, etc.) |
 
 ---
