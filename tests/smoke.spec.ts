@@ -206,6 +206,15 @@ test.describe("Route navigation", () => {
 // These tests call the API from the test runner (not through the browser) so
 // CORS is not a factor.  They fail the build if the API is unreachable or
 // returns an unexpected shape, even when every frontend route looks fine.
+//
+// Scope: only /health is tested here because it is the one endpoint that is
+// intentionally unauthenticated in all deployment modes.  Every other business
+// endpoint (/dashboard, /employees, etc.) requires a valid Entra ID Bearer
+// token when NODE_ENV=production — a token these tests cannot acquire.
+//
+// Manual release validation required (see RELEASE_CHECKLIST in README):
+//   curl -H "Authorization: Bearer <token>" $API_URL/dashboard
+//   Expect: 200 with valid JSON shape.
 
 test.describe("API connectivity", () => {
     test("GET /health returns 200 with expected shape", async ({ request }) => {
@@ -217,42 +226,26 @@ test.describe("API connectivity", () => {
         expect(typeof body.timestamp).toBe("string");
         expect(body.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     });
-
-    test("GET /dashboard returns 200 with valid shape (safe for empty database)", async ({ request }) => {
-        const response = await request.get(`${API_BASE_URL}/dashboard`);
-        expect(response.status()).toBe(200);
-        const body = await response.json();
-        // Top-level fields must always be present, regardless of data volume.
-        expect(body.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-        expect(typeof body.taskCounts).toBe("object");
-        expect(typeof body.taskCounts.notStarted).toBe("number");
-        expect(typeof body.taskCounts.inProgress).toBe("number");
-        expect(typeof body.taskCounts.completed).toBe("number");
-        expect(typeof body.activeEmployeesCount).toBe("number");
-        expect(typeof body.openIssuesCount).toBe("number");
-        expect(typeof body.coachingFollowUpsDueCount).toBe("number");
-        expect(typeof body.productivitySnapshot).toBe("object");
-        expect(typeof body.productivitySnapshot.recordsLogged).toBe("number");
-        expect(typeof body.productivitySnapshot.totalUnitsStocked).toBe("number");
-        // urgentTasks / recentOpenIssues / upcomingFollowUps are arrays (may be empty)
-        expect(Array.isArray(body.urgentTasks)).toBe(true);
-        expect(Array.isArray(body.recentOpenIssues)).toBe(true);
-        expect(Array.isArray(body.upcomingFollowUps)).toBe(true);
-        // latestSummary is either null or an object — both are valid on empty DB
-        expect(body.latestSummary === null || typeof body.latestSummary === "object").toBe(true);
-    });
 });
 
 // ── API connectivity — browser-side check ────────────────────────────────────
 //
-// Proves the frontend is not just rendering shell chrome while the API fails.
-// The dashboard calls /dashboard on mount; we intercept that response through
-// the browser and also assert that the resolved UI section ("Shift Overview")
-// appears — a section that only renders after a successful API response, even
-// when the database is empty.
+// Proves the frontend reaches the API and the page shell renders regardless of
+// auth state.  Two valid deployed states exist:
+//
+//   200  — NODE_ENV is not "production" (auth middleware bypassed); also
+//           verifies the dashboard response shape and resolved UI.
+//   401  — NODE_ENV=production with Entra ID enforced; proves the API is
+//           reachable and auth is active, but the frontend cannot yet acquire
+//           a Bearer token (MSAL integration is Phase 2).
+//
+// A 401 here is not a test failure — it is the correct behavior of a
+// production-hardened API before frontend auth is wired up.  Validating the
+// full authenticated round-trip requires a real Bearer token and is a manual
+// release step (see README release checklist).
 
 test.describe("Frontend ↔ API integration", () => {
-    test("dashboard receives a successful API response and renders resolved content", async ({ page }) => {
+    test("dashboard page shell renders and API is reachable", async ({ page }) => {
         // Arm the interceptor before navigation so we don't miss the request.
         const dashboardApiCall = page.waitForResponse(
             (resp) =>
@@ -263,16 +256,21 @@ test.describe("Frontend ↔ API integration", () => {
 
         await page.goto("/");
 
+        // The page heading must always render, regardless of API auth state.
+        await expect(page.getByText("Dashboard").first()).toBeVisible();
+
         const apiResponse = await dashboardApiCall;
+        const status = apiResponse.status();
 
-        // The browser-level request to the API must succeed.
-        expect(apiResponse.status()).toBe(200);
-        const body = await apiResponse.json();
-        expect(body.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        // 200 = auth bypassed (non-production mode); 401 = auth enforced (production hardened).
+        // Both confirm the API is reachable and routing is correct.
+        expect([200, 401]).toContain(status);
 
-        // "Shift Overview" is only rendered when !loading && summary — it never
-        // appears in the loading state or the error state, so its presence proves
-        // the frontend consumed a successful API response.
-        await expect(page.getByText("Shift Overview")).toBeVisible({ timeout: 15000 });
+        if (status === 200) {
+            const body = await apiResponse.json();
+            expect(body.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+            // "Shift Overview" only renders after a successful API response.
+            await expect(page.getByText("Shift Overview")).toBeVisible({ timeout: 15000 });
+        }
     });
 });

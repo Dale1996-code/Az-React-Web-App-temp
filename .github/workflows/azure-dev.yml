@@ -146,6 +146,22 @@ jobs:
           npx playwright install --with-deps chromium
 
       - name: Run smoke tests against deployed app
+        # Smoke tests validate:
+        #   - All 7 route shells render (auth-agnostic; accept loading/empty/list states)
+        #   - GET /health returns 200 (the one endpoint that is always unauthenticated)
+        #   - Frontend reaches the API (/dashboard returns 200 or 401; both are valid)
+        #
+        # Smoke tests do NOT validate authenticated business endpoints.
+        # NODE_ENV is not set to "production" in the current Bicep configuration,
+        # so auth middleware is bypassed in the deployed environment.  When
+        # NODE_ENV=production is enabled (production hardening), all business
+        # endpoints will require a Bearer token that these tests cannot acquire.
+        #
+        # Manual release steps required before enabling production auth hardening:
+        #   1. Set AZURE_AD_TENANT_ID and AZURE_AD_CLIENT_ID on the API App Service.
+        #   2. Verify: curl -H "Authorization: Bearer <token>" $API_URL/dashboard → 200
+        #   3. Verify: curl $API_URL/dashboard (no token) → 401
+        #   4. Confirm frontend MSAL integration is complete before setting NODE_ENV=production.
         run: |
           AZD_ENV=$(azd env get-values)
           WEB_URL=$(echo "$AZD_ENV" | grep '^SERVICE_WEB_URI=' | cut -d'=' -f2- | tr -d '"')
