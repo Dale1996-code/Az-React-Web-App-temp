@@ -18,7 +18,7 @@
       "value": "${APIM_SKU=Consumption}"
     },
     "appServicePlanSkuName": {
-      "value": "${APP_SERVICE_PLAN_SKU_NAME=B1}"
+      "value": "${APP_SERVICE_PLAN_SKU_NAME=F1}"
     }
   }
 }

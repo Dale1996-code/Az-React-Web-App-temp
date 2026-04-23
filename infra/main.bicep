@@ -33,9 +33,9 @@ param apimSku string = 'Consumption'
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
 
-@description('App Service Plan SKU name. B1 is the cheapest tier that supports alwaysOn and Linux. Use B2/B3 for more capacity, S1+ for staging slots, P1v3+ for production scale. Free (F1) and Shared (D1) are NOT supported because alwaysOn is required.')
-@allowed(['B1', 'B2', 'B3', 'S1', 'S2', 'S3', 'P1v3', 'P2v3', 'P3v3'])
-param appServicePlanSkuName string = 'B1'
+@description('App Service Plan SKU name. F1 (Free) is the default so the template deploys on quota-constrained subscriptions (e.g. Azure Free with Basic VM quota = 0); when F1 is chosen, alwaysOn and healthCheckPath are automatically disabled because the Free tier does not support them. Use B1+ when quota allows and alwaysOn is required.')
+@allowed(['F1', 'B1', 'B2', 'B3', 'S1', 'S2', 'S3', 'P1v3', 'P2v3', 'P3v3'])
+param appServicePlanSkuName string = 'F1'
 
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
@@ -43,6 +43,7 @@ var tags = { 'azd-env-name': environmentName }
 
 // Derive App Service Plan tier from SKU name so callers only need to set one parameter.
 var appServicePlanSkuTierMap = {
+  F1: 'Free'
   B1: 'Basic'
   B2: 'Basic'
   B3: 'Basic'
@@ -54,6 +55,7 @@ var appServicePlanSkuTierMap = {
   P3v3: 'PremiumV3'
 }
 var appServicePlanSkuTier = appServicePlanSkuTierMap[appServicePlanSkuName]
+var isFreeTier = appServicePlanSkuTier == 'Free'
 
 // Organize resources in a resource group
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
@@ -86,11 +88,13 @@ module api './app/api-appservice-avm.bicep' = {
     tags: tags
     kind: 'app'
     appServicePlanId: appServicePlan.outputs.resourceId
-    siteConfig: {
-      alwaysOn: true
-      linuxFxVersion: 'node|22-lts'
-      healthCheckPath: '/health'
-    }
+    siteConfig: union(
+      {
+        alwaysOn: !isFreeTier
+        linuxFxVersion: 'node|22-lts'
+      },
+      isFreeTier ? {} : { healthCheckPath: '/health' }
+    )
     appSettings: {
       AZURE_KEY_VAULT_ENDPOINT: keyVault.outputs.uri
       AZURE_COSMOS_DATABASE_NAME: cosmos.outputs.databaseName
