@@ -126,7 +126,7 @@ test.describe("Coaching route", () => {
         await page.goto("/coaching");
         await expect(
             page.getByText("Loading coaching records…").or(
-                page.getByText("New Entry")
+                page.getByText("New Record")
             ).first()
         ).toBeVisible({ timeout: 10000 });
     });
@@ -247,9 +247,11 @@ test.describe("API connectivity", () => {
 test.describe("Frontend ↔ API integration", () => {
     test("dashboard page shell renders and API is reachable", async ({ page }) => {
         // Arm the interceptor before navigation so we don't miss the request.
+        // Match the full API origin to avoid catching Vite's module request for
+        // dashboardService.ts, whose URL also contains "/dashboard".
         const dashboardApiCall = page.waitForResponse(
             (resp) =>
-                resp.url().includes("/dashboard") &&
+                resp.url().startsWith(`${API_BASE_URL}/dashboard`) &&
                 resp.request().method() === "GET",
             { timeout: 15000 },
         );
