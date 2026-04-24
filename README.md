@@ -90,13 +90,14 @@ Before running `azd up` for the first time, confirm the following:
 2. `azd up` — prompts for environment name, subscription, and region, then provisions infrastructure and deploys both services
    - Pick a region where B1 Linux App Service and Cosmos DB serverless are available (East US, West Europe, and North Europe are reliable choices)
    - First provision takes 5–10 minutes; subsequent `azd deploy` runs are ~2 minutes
-3. **Optional pre-readiness step — set Entra ID auth settings on the API App Service.** `AZURE_AD_TENANT_ID` and `AZURE_AD_CLIENT_ID` are **not** provisioned by Bicep and are **not required for the current internal MVP** — the deployed API runs without `NODE_ENV=production`, so auth enforcement is bypassed and all endpoints are open. Set these now if you want the environment ready for production hardening later; they have no effect until `NODE_ENV=production` is also added to App Service config:
+3. **Optional pre-readiness step — store Entra ID values now for later hardening.** `AZURE_AD_TENANT_ID`, `AZURE_AD_CLIENT_ID`, and `NODE_ENV=production` are **not** provisioned by Bicep and are **not required for the current internal MVP** — the deployed API runs with auth enforcement bypassed and all endpoints are open. You can pre-populate the Entra ID values now if you want the environment staged for Phase 2 hardening, but **do not set `NODE_ENV=production` until MSAL is wired into the frontend** — doing so will return 401 on every frontend API call and make the app non-functional:
 
    **Bash (Linux/macOS/WSL):**
    ```bash
    API_APP=$(azd env get-values | grep '^SERVICE_API_NAME=' | cut -d'=' -f2- | tr -d '"')
    RG=$(azd env get-values | grep '^AZURE_RESOURCE_GROUP=' | cut -d'=' -f2- | tr -d '"')
 
+   # Pre-populate AD values only — do NOT add NODE_ENV=production yet (see Authentication below)
    az webapp config appsettings set \
      --name "$API_APP" --resource-group "$RG" \
      --settings \
@@ -304,14 +305,19 @@ All business API endpoints (`/employees`, `/tasks`, `/dashboard`, etc.) are desi
 
 The Bicep configuration does not set `NODE_ENV=production`, so the deployed API runs with auth middleware in bypass mode: all endpoints accept requests without a token. This is intentional for the internal MVP phase while MSAL frontend integration (Phase 2) is not yet complete. You will see `Auth: enforcement disabled — all requests allowed` in the API log stream; this is the expected state.
 
-**To enable production auth hardening** (after MSAL is wired into the frontend), two App Service settings must be configured. They are intentionally not set by Bicep — the Entra ID App Registration that represents the API is a separate, pre-existing artefact, so its IDs are environment-specific and cannot be derived from infrastructure outputs:
+**To enable production auth hardening**, three settings must be set on the API App Service. They are intentionally absent from Bicep — the Entra ID App Registration is a separate, pre-existing artefact whose IDs are environment-specific and cannot be derived from infrastructure outputs:
 
 | Setting | Where to find it |
 |---|---|
 | `AZURE_AD_TENANT_ID` | Azure Portal → Entra ID → Overview → Tenant ID |
 | `AZURE_AD_CLIENT_ID` | Azure Portal → Entra ID → App registrations → your API app → Application (client) ID |
+| `NODE_ENV` | Set to `production` — this is the switch that activates enforcement |
 
-Set them with the Azure CLI (the API restarts automatically when app settings change):
+**Sequence — complete these steps in order:**
+
+1. **Wire MSAL into the React frontend** (Phase 2) so it acquires an Entra ID token and attaches it as `Authorization: Bearer <token>` on every API request. Skipping this step means all frontend API calls return 401 the moment enforcement is enabled.
+2. **Register an Entra ID App Registration** for the API (or reuse an existing one) and note its Tenant ID and Application (client) ID.
+3. **Activate enforcement** — set all three values together (the API restarts automatically):
 
 **Bash (Linux/macOS/WSL):**
 ```bash
@@ -322,7 +328,8 @@ az webapp config appsettings set \
   --name "$API_APP" --resource-group "$RG" \
   --settings \
     AZURE_AD_TENANT_ID=<tenant-guid> \
-    AZURE_AD_CLIENT_ID=<api-app-registration-client-id>
+    AZURE_AD_CLIENT_ID=<api-app-registration-client-id> \
+    NODE_ENV=production
 ```
 
 **Windows (PowerShell):**
@@ -342,8 +349,6 @@ Once `NODE_ENV=production` is set alongside these values, the API will refuse to
 **In local development** (`NODE_ENV=development` or `test`): auth is bypassed automatically with a startup warning. No Azure AD credentials are needed locally.
 
 **In the current deployed environment**: auth is also bypassed (see above). The `/health` endpoint is always open regardless.
-
-> **Phase 2 prerequisite:** The React frontend must have MSAL wired in to acquire and attach Bearer tokens before `NODE_ENV=production` can be safely enabled. Until then, enabling production auth would make all business endpoints return 401 to the frontend. See [`src/api/README.md`](src/api/README.md) for server-side configuration details.
 
 ## App Service Plan SKU and Cost
 
