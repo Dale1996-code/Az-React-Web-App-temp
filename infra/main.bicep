@@ -75,6 +75,7 @@ module web './app/web-appservice-avm.bicep' = {
     appServicePlanId: appServicePlan.outputs.resourceId
     appInsightResourceId: monitoring.outputs.applicationInsightsResourceId
     linuxFxVersion: 'node|22-lts'
+    alwaysOn: !isFreeTier
   }
 }
 
