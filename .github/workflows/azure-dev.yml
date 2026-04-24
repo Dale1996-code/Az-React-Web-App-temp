@@ -124,6 +124,19 @@ jobs:
         env:
           AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
 
+      - name: Override App Service Plan SKU
+        # AZD_INITIAL_ENVIRONMENT_CONFIG was generated when the default SKU was B1.
+        # It persists APP_SERVICE_PLAN_SKU_NAME=B1 in the azd env, overriding the
+        # =F1 default in main.parameters.json. Force F1 so that quota-constrained
+        # subscriptions (Basic VM quota = 0) can provision successfully.
+        # To use a higher tier, set the APP_SERVICE_PLAN_SKU_NAME repo variable.
+        run: azd env set APP_SERVICE_PLAN_SKU_NAME "${{ vars.APP_SERVICE_PLAN_SKU_NAME || 'F1' }}"
+        env:
+          AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
+          AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          AZD_INITIAL_ENVIRONMENT_CONFIG: ${{ secrets.AZD_INITIAL_ENVIRONMENT_CONFIG }}
+
       - name: Provision Infrastructure
         run: azd provision --no-prompt
         env:

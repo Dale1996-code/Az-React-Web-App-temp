@@ -7,6 +7,8 @@ param appInsightResourceId string
 param appServicePlanId string
 param linuxFxVersion string
 param kind string = 'app,linux'
+@description('Set false when using the Free (F1) tier, which does not support alwaysOn.')
+param alwaysOn bool = true
 
 module web 'br/public:avm/res/web/site:0.6.0' = {
   name: '${name}-deployment'
@@ -20,7 +22,7 @@ module web 'br/public:avm/res/web/site:0.6.0' = {
     siteConfig: {
       appCommandLine: appCommandLine
       linuxFxVersion: linuxFxVersion
-      alwaysOn: true
+      alwaysOn: alwaysOn
     }
     logsConfiguration: {
       applicationLogs: { fileSystem: { level: 'Verbose' } }
