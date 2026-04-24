@@ -101,6 +101,12 @@ module api './app/api-appservice-avm.bicep' = {
       AZURE_COSMOS_ENDPOINT: cosmos.outputs.endpoint
       API_ALLOW_ORIGINS: web.outputs.SERVICE_WEB_URI
       SCM_DO_BUILD_DURING_DEPLOYMENT: false
+      // NODE_ENV, AZURE_AD_TENANT_ID, and AZURE_AD_CLIENT_ID are intentionally
+      // absent here. Auth enforcement is bypassed in the MVP phase because the
+      // React frontend does not yet have MSAL integrated (Phase 2 prerequisite).
+      // Setting NODE_ENV=production before MSAL is wired will return 401 on
+      // every frontend API call. See README.md#authentication for the full
+      // production hardening checklist and the correct sequencing.
     }
     appInsightResourceId: monitoring.outputs.applicationInsightsResourceId
     allowedOrigins: [ web.outputs.SERVICE_WEB_URI ]
