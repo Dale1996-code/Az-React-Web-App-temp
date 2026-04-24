@@ -15,6 +15,8 @@ Copy `.env.example` to `.env` and fill in your values:
 cp .env.example .env
 ```
 
+On Windows PowerShell: `Copy-Item .env.example .env`
+
 The API authenticates with Cosmos DB using `DefaultAzureCredential`. Run `az login` before starting the server locally so it can pick up your developer credential.
 
 | Variable | Required | Default | Notes |
@@ -37,7 +39,7 @@ In Azure all of these are set as App Service environment variables by the Bicep 
 |---|---|
 | `npm ci` | Install dependencies |
 | `npm run build` | Lint + compile TypeScript into `./dist` |
-| `npm start` | Build and start the server (port 3100) |
+| `npm start` | Start the server (port 3100) — requires `dist/` from `npm run build` |
 | `npm test` | Run integration tests (in-memory mock, no DB needed) |
 
 ## Authentication
