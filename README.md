@@ -36,8 +36,14 @@ Run this before `azd deploy` (or any `azd up`) to verify the repo is in a
 deployable state. It mirrors the build and test steps that run in CI before
 provisioning, so failures are caught locally instead of mid-deploy.
 
+**Linux / macOS / WSL:**
 ```bash
 ./preflight.sh
+```
+
+**Windows (PowerShell — no WSL required):**
+```powershell
+.\preflight.ps1
 ```
 
 What it checks (in order):
@@ -61,8 +67,9 @@ Exit code is `0` when everything passes, `1` when anything fails.
 # Authenticate once per install
 azd auth login
 
-# Verify the repo is ready first
+# Verify the repo is ready first (Linux/macOS/WSL)
 ./preflight.sh
+# Windows PowerShell: .\preflight.ps1
 
 # Provision infrastructure and deploy
 azd up
@@ -85,6 +92,7 @@ Before running `azd up` for the first time, confirm the following:
    - First provision takes 5–10 minutes; subsequent `azd deploy` runs are ~2 minutes
 3. **Optional pre-readiness step — set Entra ID auth settings on the API App Service.** `AZURE_AD_TENANT_ID` and `AZURE_AD_CLIENT_ID` are **not** provisioned by Bicep and are **not required for the current internal MVP** — the deployed API runs without `NODE_ENV=production`, so auth enforcement is bypassed and all endpoints are open. Set these now if you want the environment ready for production hardening later; they have no effect until `NODE_ENV=production` is also added to App Service config:
 
+   **Bash (Linux/macOS/WSL):**
    ```bash
    API_APP=$(azd env get-values | grep '^SERVICE_API_NAME=' | cut -d'=' -f2- | tr -d '"')
    RG=$(azd env get-values | grep '^AZURE_RESOURCE_GROUP=' | cut -d'=' -f2- | tr -d '"')
@@ -93,6 +101,18 @@ Before running `azd up` for the first time, confirm the following:
      --name "$API_APP" --resource-group "$RG" \
      --settings \
        AZURE_AD_TENANT_ID=<tenant-guid> \
+       AZURE_AD_CLIENT_ID=<api-app-registration-client-id>
+   ```
+
+   **Windows (PowerShell):**
+   ```powershell
+   $API_APP = (azd env get-values | Select-String '^SERVICE_API_NAME=').Line -replace '^SERVICE_API_NAME=|"', ''
+   $RG      = (azd env get-values | Select-String '^AZURE_RESOURCE_GROUP=').Line -replace '^AZURE_RESOURCE_GROUP=|"', ''
+
+   az webapp config appsettings set `
+     --name $API_APP --resource-group $RG `
+     --settings `
+       AZURE_AD_TENANT_ID=<tenant-guid> `
        AZURE_AD_CLIENT_ID=<api-app-registration-client-id>
    ```
 
@@ -213,13 +233,36 @@ cp src/web/.env.example src/web/.env
 
 ### Run Locally
 
-```bash
-# Quick start (both API + frontend)
-./start-dev.sh
+`start-dev.sh` and `start-dev.ps1` both install dependencies, build the API, and start both services. Use whichever matches your shell.
 
-# Or start each service individually:
-cd src/api && npm ci && NODE_ENV=development npm start   # http://localhost:3100
-cd src/web && npm ci && npm run dev                       # http://localhost:5173
+**Linux / macOS / WSL:**
+```bash
+./start-dev.sh
+```
+
+**Windows (PowerShell — no WSL required):**
+```powershell
+.\start-dev.ps1
+```
+
+Or start each service individually in two separate terminals:
+
+**Bash:**
+```bash
+# Terminal 1 — API (http://localhost:3100)
+cd src/api && npm ci && npm run build && NODE_ENV=development npm start
+
+# Terminal 2 — Web (http://localhost:5173)
+cd src/web && npm ci && npm run dev
+```
+
+**PowerShell:**
+```powershell
+# Terminal 1 — API (http://localhost:3100)
+Push-Location src\api; npm ci; npm run build; $env:NODE_ENV="development"; node .
+
+# Terminal 2 — Web (http://localhost:5173)
+Push-Location src\web; npm ci; npm run dev
 ```
 
 Run API integration tests (no database required — uses in-memory mock):
@@ -270,6 +313,7 @@ The Bicep configuration does not set `NODE_ENV=production`, so the deployed API 
 
 Set them with the Azure CLI (the API restarts automatically when app settings change):
 
+**Bash (Linux/macOS/WSL):**
 ```bash
 API_APP=$(azd env get-values | grep '^SERVICE_API_NAME=' | cut -d'=' -f2- | tr -d '"')
 RG=$(azd env get-values | grep '^AZURE_RESOURCE_GROUP=' | cut -d'=' -f2- | tr -d '"')
@@ -278,6 +322,18 @@ az webapp config appsettings set \
   --name "$API_APP" --resource-group "$RG" \
   --settings \
     AZURE_AD_TENANT_ID=<tenant-guid> \
+    AZURE_AD_CLIENT_ID=<api-app-registration-client-id>
+```
+
+**Windows (PowerShell):**
+```powershell
+$API_APP = (azd env get-values | Select-String '^SERVICE_API_NAME=').Line -replace '^SERVICE_API_NAME=|"', ''
+$RG      = (azd env get-values | Select-String '^AZURE_RESOURCE_GROUP=').Line -replace '^AZURE_RESOURCE_GROUP=|"', ''
+
+az webapp config appsettings set `
+  --name $API_APP --resource-group $RG `
+  --settings `
+    AZURE_AD_TENANT_ID=<tenant-guid> `
     AZURE_AD_CLIENT_ID=<api-app-registration-client-id>
 ```
 
@@ -370,11 +426,20 @@ The API writes every log line to stdout (always, regardless of App Insights stat
 # Tail the API log stream live (requires filesystem logging enabled — see above)
 az webapp log tail --name <api-app-name> --resource-group <resource-group>
 
-# Confirm azd environment outputs are populated
+# Confirm azd environment outputs are populated (bash/WSL)
 azd env get-values | grep -E 'SERVICE_|API_BASE_URL|APPLICATIONINSIGHTS'
 
-# Check what the health endpoint returns (also reports env= for environment confirmation)
+# Check what the health endpoint returns
 curl -s https://<api-url>/health | jq .
+```
+
+**Windows PowerShell equivalents:**
+```powershell
+# Confirm azd environment outputs are populated
+azd env get-values | Select-String 'SERVICE_|API_BASE_URL|APPLICATIONINSIGHTS'
+
+# Check the health endpoint
+Invoke-RestMethod https://<api-url>/health | ConvertTo-Json
 ```
 
 #### Log landmarks to search for in App Insights Traces
@@ -556,12 +621,20 @@ azd deploy --no-prompt
 
 Cosmos DB data is **not** affected by a code-only redeploy — there are no migration steps in this codebase. After the deploy, run the smoke tests to confirm:
 
+**Bash (Linux/macOS/WSL):**
 ```bash
 cd tests
-AZD_ENV=$(azd env get-values)
-WEB_URL=$(echo "$AZD_ENV" | grep '^SERVICE_WEB_URI=' | cut -d'=' -f2- | tr -d '"')
-API_URL=$(echo "$AZD_ENV" | grep '^SERVICE_API_URI=' | cut -d'=' -f2- | tr -d '"')
+WEB_URL=$(azd env get-values | grep '^SERVICE_WEB_URI=' | cut -d'=' -f2- | tr -d '"')
+API_URL=$(azd env get-values | grep '^SERVICE_API_URI=' | cut -d'=' -f2- | tr -d '"')
 REACT_APP_WEB_BASE_URL="$WEB_URL" REACT_APP_API_BASE_URL="$API_URL" npx playwright test
+```
+
+**Windows (PowerShell):**
+```powershell
+Set-Location tests
+$env:REACT_APP_WEB_BASE_URL = (azd env get-values | Select-String '^SERVICE_WEB_URI=').Line -replace '^SERVICE_WEB_URI=|"', ''
+$env:REACT_APP_API_BASE_URL = (azd env get-values | Select-String '^SERVICE_API_URI=').Line -replace '^SERVICE_API_URI=|"', ''
+npx playwright test
 ```
 
 ### Broken infrastructure change — `azd provision` left things in a bad state
@@ -598,6 +671,7 @@ Then configure a staging slot in the App Service portal. Without slots, a rollba
 
 After any recovery action, verify end-to-end health:
 
+**Bash (Linux/macOS/WSL):**
 ```bash
 # Check both service URLs are present
 azd env get-values | grep -E 'SERVICE_(WEB|API)_URI'
@@ -605,12 +679,19 @@ azd env get-values | grep -E 'SERVICE_(WEB|API)_URI'
 # Hit the health endpoint directly
 API_URL=$(azd env get-values | grep '^SERVICE_API_URI=' | cut -d'=' -f2- | tr -d '"')
 curl -s "$API_URL/health"   # expect: {"status":"ok","timestamp":"..."}
-
-# Run the full smoke suite
-cd tests && npx playwright test \
-  --env REACT_APP_WEB_BASE_URL="..." \
-  --env REACT_APP_API_BASE_URL="..."
 ```
+
+**Windows (PowerShell):**
+```powershell
+# Check both service URLs are present
+azd env get-values | Select-String 'SERVICE_(WEB|API)_URI'
+
+# Hit the health endpoint directly
+$API_URL = (azd env get-values | Select-String '^SERVICE_API_URI=').Line -replace '^SERVICE_API_URI=|"', ''
+Invoke-RestMethod "$API_URL/health"   # expect: status=ok
+```
+
+Then run the full smoke suite (see [tests/README.md](tests/README.md) for instructions).
 
 ---
 

@@ -22,8 +22,8 @@
         }
     },
     "forwardPorts": [
-        3000,
-        3100
+        3100,
+        5173
     ],
     "postCreateCommand": "",
     "remoteUser": "node",

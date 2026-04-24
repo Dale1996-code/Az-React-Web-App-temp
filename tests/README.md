@@ -55,9 +55,17 @@ npx playwright test
 
 To target a specific deployed environment:
 
+**Bash (Linux/macOS/WSL):**
 ```bash
 REACT_APP_WEB_BASE_URL="https://web.example.com" \
 REACT_APP_API_BASE_URL="https://api.example.com" \
+npx playwright test
+```
+
+**Windows (PowerShell):**
+```powershell
+$env:REACT_APP_WEB_BASE_URL = "https://web.example.com"
+$env:REACT_APP_API_BASE_URL = "https://api.example.com"
 npx playwright test
 ```
 
