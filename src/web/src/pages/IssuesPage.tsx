@@ -1,4 +1,4 @@
-import { FC, ReactElement, useCallback, useEffect, useState } from 'react';
+import { FC, ReactElement, useCallback, useEffect, useRef, useState } from 'react';
 import {
     DefaultButton,
     Dropdown,
@@ -16,11 +16,14 @@ import { IssueLog, IssueFormData, IssueStatus } from '../models/issue';
 import { getIssues, createIssue, updateIssue, deleteIssue } from '../services/issuesService';
 import { useCrudPanel } from '../hooks/useCrudPanel';
 import { useEmployees } from '../hooks/useEmployees';
+import { useToast } from '../hooks/useToast';
 import { todayISO, ISO_DATE_RE } from '../utils/dateUtils';
+import { extractApiError } from '../utils/errorUtils';
 import ListState from '../components/ListState';
 import PanelFooter from '../components/PanelFooter';
 import DeleteDialog from '../components/DeleteDialog';
 import ErrorBar from '../components/ErrorBar';
+import ToastBar from '../components/ToastBar';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -77,7 +80,6 @@ type FormState = {
     department: string;
     description: string;
     reportedByEmployeeId: string;
-    resolvedAt: string;
     resolutionNotes: string;
 };
 
@@ -88,7 +90,6 @@ const emptyForm = (date?: string): FormState => ({
     department:           '',
     description:          '',
     reportedByEmployeeId: '',
-    resolvedAt:           '',
     resolutionNotes:      '',
 });
 
@@ -200,7 +201,7 @@ const IssueRow: FC<IssueRowProps> = ({
                             iconProps={{ iconName: 'CheckMark' }}
                             onClick={() => onResolve(issue)}
                             styles={{
-                                root: { minWidth: 0, padding: '0 10px', height: 28 },
+                                root: { minWidth: 0, padding: '0 10px', height: 44 },
                                 label: { color: '#107c10' },
                             }}
                         />
@@ -209,14 +210,14 @@ const IssueRow: FC<IssueRowProps> = ({
                         text="Edit"
                         iconProps={{ iconName: 'Edit' }}
                         onClick={() => onEdit(issue)}
-                        styles={{ root: { minWidth: 0, padding: '0 10px', height: 28 } }}
+                        styles={{ root: { minWidth: 0, padding: '0 10px', height: 44 } }}
                     />
                     <DefaultButton
                         text="Remove"
                         iconProps={{ iconName: 'Delete' }}
                         onClick={() => onDelete(issue)}
                         styles={{
-                            root: { minWidth: 0, padding: '0 10px', height: 28 },
+                            root: { minWidth: 0, padding: '0 10px', height: 44 },
                             label: { color: '#a4262c' },
                         }}
                     />
@@ -241,15 +242,23 @@ const IssueForm: FC<IssueFormProps> = ({
     errors,
     employeeOptions,
 }): ReactElement => {
+    const firstInputRef = useRef<HTMLInputElement | null>(null);
+
+    useEffect(() => {
+        const id = setTimeout(() => firstInputRef.current?.focus(), 50);
+        return () => clearTimeout(id);
+    }, []);
+
     return (
         <Stack tokens={stackGaps} style={{ padding: '0 16px' }}>
             <TextField
                 label="Date"
                 required
+                type="date"
                 value={form.storeDate}
                 onChange={(_, v) => onChange({ storeDate: v ?? '' })}
                 errorMessage={errors.storeDate}
-                placeholder="YYYY-MM-DD"
+                componentRef={r => { firstInputRef.current = (r as unknown as { _textElement?: { value: HTMLInputElement } })?._textElement?.value ?? null; }}
             />
 
             <Dropdown
@@ -302,13 +311,6 @@ const IssueForm: FC<IssueFormProps> = ({
             />
 
             <TextField
-                label="Resolved at"
-                value={form.resolvedAt}
-                onChange={(_, v) => onChange({ resolvedAt: v ?? '' })}
-                placeholder="YYYY-MM-DDTHH:MM (optional, auto-set on quick-resolve)"
-            />
-
-            <TextField
                 label="Resolution notes"
                 multiline
                 rows={3}
@@ -334,6 +336,7 @@ const IssuesPage: FC = (): ReactElement => {
     const [filterCategory, setFilterCategory] = useState('');
 
     const { employeeMap, employeeOptions } = useEmployees();
+    const { toastMessage, showToast } = useToast();
 
     const {
         panelOpen, setPanelOpen,
@@ -366,8 +369,8 @@ const IssuesPage: FC = (): ReactElement => {
             if (category) query.category   = category;
             const data = await getIssues(query);
             setIssues(data);
-        } catch {
-            setListError('Failed to load issues. Please try again.');
+        } catch (err) {
+            setListError(extractApiError(err, 'Failed to load issues. Please try again.'));
         } finally {
             setLoading(false);
         }
@@ -387,7 +390,6 @@ const IssuesPage: FC = (): ReactElement => {
             department:           issue.department,
             description:          issue.description,
             reportedByEmployeeId: issue.reportedByEmployeeId ?? '',
-            resolvedAt:           issue.resolvedAt ?? '',
             resolutionNotes:      issue.resolutionNotes ?? '',
         });
     };
@@ -417,6 +419,7 @@ const IssuesPage: FC = (): ReactElement => {
         setSaving(true);
         setSaveError(null);
 
+        const isResolved = form.status === 'resolved';
         const payload: IssueFormData = {
             storeDate:   form.storeDate,
             category:    form.category.trim(),
@@ -424,20 +427,22 @@ const IssuesPage: FC = (): ReactElement => {
             department:  form.department.trim(),
             description: form.description.trim(),
             ...(form.reportedByEmployeeId   && { reportedByEmployeeId: form.reportedByEmployeeId }),
-            ...(form.resolvedAt             && { resolvedAt:           form.resolvedAt }),
+            ...(isResolved                  && { resolvedAt:           new Date().toISOString() }),
             ...(form.resolutionNotes.trim() && { resolutionNotes:      form.resolutionNotes.trim() }),
         };
 
         try {
             if (editing) {
                 await updateIssue(editing.id, payload);
+                showToast('Issue updated');
             } else {
                 await createIssue(payload);
+                showToast('Issue logged');
             }
             setPanelOpen(false);
             await load(filterDate, filterStatus, filterDept, filterCategory);
-        } catch {
-            setSaveError('Save failed. Check your inputs and try again.');
+        } catch (err) {
+            setSaveError(extractApiError(err, 'Save failed. Check your inputs and try again.'));
         } finally {
             setSaving(false);
         }
@@ -451,9 +456,10 @@ const IssuesPage: FC = (): ReactElement => {
                 status:     'resolved',
                 resolvedAt: new Date().toISOString(),
             });
+            showToast('Issue resolved');
             await load(filterDate, filterStatus, filterDept, filterCategory);
-        } catch {
-            setListError('Failed to mark issue as resolved. Please try again.');
+        } catch (err) {
+            setListError(extractApiError(err, 'Failed to mark issue as resolved. Please try again.'));
         }
     };
 
@@ -466,9 +472,10 @@ const IssuesPage: FC = (): ReactElement => {
         try {
             await deleteIssue(deleteTarget.id);
             setDeleteTarget(null);
+            showToast('Issue removed');
             await load(filterDate, filterStatus, filterDept, filterCategory);
-        } catch {
-            setDeleteError('Delete failed. Please try again.');
+        } catch (err) {
+            setDeleteError(extractApiError(err, 'Delete failed. Please try again.'));
         } finally {
             setDeleting(false);
         }
@@ -487,7 +494,7 @@ const IssuesPage: FC = (): ReactElement => {
     // ── Render ─────────────────────────────────────────────────────────────────
 
     return (
-        <Stack tokens={stackPadding} style={{ maxWidth: 960, margin: '0 auto', width: '100%' }}>
+        <Stack tokens={stackPadding} className="page-container" style={{ maxWidth: 960, margin: '0 auto', width: '100%' }}>
             {/* Page header */}
             <Stack.Item tokens={stackItemPadding}>
                 <Stack
@@ -516,12 +523,12 @@ const IssuesPage: FC = (): ReactElement => {
 
             {/* Filters */}
             <Stack.Item tokens={stackItemPadding}>
-                <Stack horizontal wrap tokens={{ childrenGap: 12 }} verticalAlign="end">
+                <Stack horizontal wrap tokens={{ childrenGap: 12 }} verticalAlign="end" className="filter-row">
                     <TextField
                         label="Date"
+                        type="date"
                         value={filterDate}
                         onChange={(_, v) => setFilterDate(v ?? '')}
-                        placeholder="YYYY-MM-DD"
                         styles={{ root: { width: 150 } }}
                     />
                     <Dropdown
@@ -608,7 +615,7 @@ const IssuesPage: FC = (): ReactElement => {
                 type={PanelType.smallFixedFar}
                 headerText={editing ? 'Edit Issue' : 'Log New Issue'}
                 onRenderFooterContent={() => (
-                    <PanelFooter saving={saving} onSave={handleSave} onCancel={closePanel} />
+                    <PanelFooter saving={saving} onSave={handleSave} onCancel={closePanel} formId="issue-form" />
                 )}
                 isFooterAtBottom
             >
@@ -622,12 +629,18 @@ const IssuesPage: FC = (): ReactElement => {
                             {saveError}
                         </MessageBar>
                     )}
-                    <IssueForm
-                        form={form}
-                        onChange={updateForm}
-                        errors={formErrors}
-                        employeeOptions={employeeOptions}
-                    />
+                    <form
+                        id="issue-form"
+                        onSubmit={e => { e.preventDefault(); handleSave(); }}
+                        style={{ display: 'contents' }}
+                    >
+                        <IssueForm
+                            form={form}
+                            onChange={updateForm}
+                            errors={formErrors}
+                            employeeOptions={employeeOptions}
+                        />
+                    </form>
                 </Stack>
             </Panel>
 
@@ -643,6 +656,8 @@ const IssuesPage: FC = (): ReactElement => {
                 onConfirm={handleDeleteConfirm}
                 onDismiss={() => { if (!deleting) setDeleteTarget(null); }}
             />
+
+            <ToastBar message={toastMessage} />
         </Stack>
     );
 };

@@ -1,5 +1,6 @@
-import { FC, ReactElement, useEffect, useState } from 'react';
+import { FC, ReactElement, useCallback, useEffect, useState } from 'react';
 import {
+    DefaultButton,
     Icon,
     MessageBar,
     MessageBarType,
@@ -105,36 +106,42 @@ function truncate(text: string, max: number): string {
     return text.length > max ? text.slice(0, max) + '…' : text;
 }
 
+function nowHHMM(): string {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 // ── DashboardPage ─────────────────────────────────────────────────────────────
 
 const DashboardPage: FC = (): ReactElement => {
     const [summary, setSummary] = useState<DashboardSummary | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+
+    const load = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const data = await getDashboardSummary(todayIso());
+            setSummary(data);
+            setLastUpdated(nowHHMM());
+        } catch {
+            setError('Could not load dashboard data. Check your connection and try again.');
+        } finally {
+            setLoading(false);
+        }
+    }, []);
 
     useEffect(() => {
-        let cancelled = false;
-        (async () => {
-            setLoading(true);
-            setError(null);
-            try {
-                const data = await getDashboardSummary(todayIso());
-                if (!cancelled) setSummary(data);
-            } catch {
-                if (!cancelled) setError('Could not load dashboard data. Check your connection and try again.');
-            } finally {
-                if (!cancelled) setLoading(false);
-            }
-        })();
-        return () => { cancelled = true; };
-    }, []);
+        load();
+    }, [load]);
 
     const date = summary?.date ?? todayIso();
     const totalTasks = summary
         ? summary.taskCounts.notStarted + summary.taskCounts.inProgress + summary.taskCounts.completed
         : 0;
 
-    // Are there items that need attention?
     const needsAttention = summary && (
         summary.urgentTasks.length > 0 ||
         summary.openIssuesCount > 0 ||
@@ -145,10 +152,29 @@ const DashboardPage: FC = (): ReactElement => {
         <Stack tokens={stackPadding} style={{ maxWidth: 900, margin: '0 auto', width: '100%' }}>
             {/* ── Page header ────────────────────────────────────────────── */}
             <Stack.Item tokens={stackItemPadding}>
-                <Text variant="xxLarge" block style={{ fontWeight: 600 }}>Dashboard</Text>
-                <Text variant="medium" style={{ color: '#605e5c' }}>
-                    {formatDate(date)}
-                </Text>
+                <Stack horizontal horizontalAlign="space-between" verticalAlign="center" wrap tokens={{ childrenGap: 12 }}>
+                    <Stack.Item>
+                        <Text variant="xxLarge" block style={{ fontWeight: 600 }}>Dashboard</Text>
+                        <Text variant="medium" style={{ color: '#605e5c' }}>
+                            {formatDate(date)}
+                        </Text>
+                    </Stack.Item>
+                    <Stack.Item>
+                        <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 12 }}>
+                            {lastUpdated && (
+                                <Text variant="small" style={{ color: '#a19f9d' }}>
+                                    Updated {lastUpdated}
+                                </Text>
+                            )}
+                            <DefaultButton
+                                text={loading ? 'Refreshing…' : 'Refresh'}
+                                iconProps={{ iconName: 'Refresh' }}
+                                onClick={load}
+                                disabled={loading}
+                            />
+                        </Stack>
+                    </Stack.Item>
+                </Stack>
             </Stack.Item>
 
             {/* ── Error ──────────────────────────────────────────────────── */}
@@ -411,7 +437,7 @@ const DashboardPage: FC = (): ReactElement => {
                                 )}
                                 {summary.latestSummary.missedWork && (
                                     <Stack tokens={{ childrenGap: 2 }}>
-                                        <Text variant="small" style={{ fontWeight: 600, color: '#d83b01' }}>Missed</Text>
+                                        <Text variant="small" style={{ fontWeight: 600, color: '#d83b01' }}>Carry-overs</Text>
                                         <Text variant="small" style={{ color: '#a19f9d' }}>
                                             {truncate(summary.latestSummary.missedWork, 150)}
                                         </Text>

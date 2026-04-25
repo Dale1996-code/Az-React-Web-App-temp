@@ -20,10 +20,13 @@ import {
     updateEmployee,
 } from '../services/employeesService';
 import { useCrudPanel } from '../hooks/useCrudPanel';
+import { useToast } from '../hooks/useToast';
+import { extractApiError } from '../utils/errorUtils';
 import ListState from '../components/ListState';
 import PanelFooter from '../components/PanelFooter';
 import DeleteDialog from '../components/DeleteDialog';
 import ErrorBar from '../components/ErrorBar';
+import ToastBar from '../components/ToastBar';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -98,7 +101,7 @@ const EmployeeRow: FC<EmployeeRowProps> = ({ employee, onEdit, onDelete }): Reac
                 <Text variant="small" style={{ color: '#605e5c' }}>
                     {employee.role}
                     {employee.department ? ` · ${employee.department}` : ''}
-                    {employee.employeeCode ? ` · #${employee.employeeCode}` : ''}
+                    {employee.employeeCode ? ` · ID: ${employee.employeeCode}` : ''}
                 </Text>
             </Stack.Item>
 
@@ -109,14 +112,14 @@ const EmployeeRow: FC<EmployeeRowProps> = ({ employee, onEdit, onDelete }): Reac
                         text="Edit"
                         iconProps={{ iconName: 'Edit' }}
                         onClick={() => onEdit(employee)}
-                        styles={{ root: { minWidth: 0, padding: '0 10px', height: 28 } }}
+                        styles={{ root: { minWidth: 0, padding: '0 10px', height: 44 } }}
                     />
                     <DefaultButton
                         text="Remove"
                         iconProps={{ iconName: 'Delete' }}
                         onClick={() => onDelete(employee)}
                         styles={{
-                            root: { minWidth: 0, padding: '0 10px', height: 28 },
+                            root: { minWidth: 0, padding: '0 10px', height: 44 },
                             label: { color: '#a4262c' },
                         }}
                     />
@@ -135,6 +138,13 @@ type EmployeeFormProps = {
 };
 
 const EmployeeForm: FC<EmployeeFormProps> = ({ form, onChange, errors }): ReactElement => {
+    const firstInputRef = useRef<HTMLInputElement | null>(null);
+
+    useEffect(() => {
+        const id = setTimeout(() => firstInputRef.current?.focus(), 50);
+        return () => clearTimeout(id);
+    }, []);
+
     return (
         <Stack tokens={stackGaps} style={{ padding: '0 16px' }}>
             <Stack horizontal tokens={{ childrenGap: 12 }} wrap>
@@ -146,6 +156,7 @@ const EmployeeForm: FC<EmployeeFormProps> = ({ form, onChange, errors }): ReactE
                         onChange={(_, v) => onChange({ firstName: v ?? '' })}
                         errorMessage={errors.firstName}
                         autoComplete="given-name"
+                        componentRef={r => { firstInputRef.current = (r as unknown as { _textElement?: { value: HTMLInputElement } })?._textElement?.value ?? null; }}
                     />
                 </Stack.Item>
                 <Stack.Item grow={1} style={{ minWidth: 140 }}>
@@ -180,7 +191,7 @@ const EmployeeForm: FC<EmployeeFormProps> = ({ form, onChange, errors }): ReactE
                 </Stack.Item>
                 <Stack.Item grow={1} style={{ minWidth: 120 }}>
                     <TextField
-                        label="Employee code"
+                        label="Employee ID"
                         value={form.employeeCode}
                         onChange={(_, v) => onChange({ employeeCode: v ?? '' })}
                         placeholder="Optional"
@@ -219,6 +230,7 @@ const EmployeesPage: FC = (): ReactElement => {
 
     const [search, setSearch] = useState('');
     const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const { toastMessage, showToast } = useToast();
 
     const {
         panelOpen, setPanelOpen,
@@ -241,8 +253,8 @@ const EmployeesPage: FC = (): ReactElement => {
         try {
             const data = await getEmployees(searchTerm ? { search: searchTerm } : undefined);
             setEmployees(data);
-        } catch {
-            setListError('Failed to load employees. Please try again.');
+        } catch (err) {
+            setListError(extractApiError(err, 'Failed to load employees. Please try again.'));
         } finally {
             setLoading(false);
         }
@@ -307,13 +319,15 @@ const EmployeesPage: FC = (): ReactElement => {
         try {
             if (editing) {
                 await updateEmployee(editing.id, payload);
+                showToast('Employee updated');
             } else {
                 await createEmployee(payload);
+                showToast('Employee saved');
             }
             setPanelOpen(false);
             await load(search || undefined);
-        } catch {
-            setSaveError('Save failed. Check your inputs and try again.');
+        } catch (err) {
+            setSaveError(extractApiError(err, 'Save failed. Check your inputs and try again.'));
         } finally {
             setSaving(false);
         }
@@ -328,9 +342,10 @@ const EmployeesPage: FC = (): ReactElement => {
         try {
             await deleteEmployee(deleteTarget.id);
             setDeleteTarget(null);
+            showToast('Employee removed');
             await load(search || undefined);
-        } catch {
-            setDeleteError('Delete failed. Please try again.');
+        } catch (err) {
+            setDeleteError(extractApiError(err, 'Delete failed. Please try again.'));
         } finally {
             setDeleting(false);
         }
@@ -339,7 +354,7 @@ const EmployeesPage: FC = (): ReactElement => {
     // ── Render ─────────────────────────────────────────────────────────────────
 
     return (
-        <Stack tokens={stackPadding} style={{ maxWidth: 960, margin: '0 auto', width: '100%' }}>
+        <Stack tokens={stackPadding} className="page-container" style={{ maxWidth: 960, margin: '0 auto', width: '100%' }}>
             {/* Page header */}
             <Stack.Item tokens={stackItemPadding}>
                 <Stack horizontal horizontalAlign="space-between" verticalAlign="center" wrap tokens={{ childrenGap: 12 }}>
@@ -363,7 +378,7 @@ const EmployeesPage: FC = (): ReactElement => {
             {/* Search bar */}
             <Stack.Item tokens={stackItemPadding}>
                 <TextField
-                    placeholder="Search by name or code…"
+                    placeholder="Search by name or ID…"
                     value={search}
                     onChange={handleSearchChange}
                     iconProps={{ iconName: 'Search' }}
@@ -427,7 +442,7 @@ const EmployeesPage: FC = (): ReactElement => {
                 type={PanelType.smallFixedFar}
                 headerText={editing ? `Edit ${displayName(editing)}` : 'New Employee'}
                 onRenderFooterContent={() => (
-                    <PanelFooter saving={saving} onSave={handleSave} onCancel={closePanel} />
+                    <PanelFooter saving={saving} onSave={handleSave} onCancel={closePanel} formId="employee-form" />
                 )}
                 isFooterAtBottom
             >
@@ -441,7 +456,13 @@ const EmployeesPage: FC = (): ReactElement => {
                             {saveError}
                         </MessageBar>
                     )}
-                    <EmployeeForm form={form} onChange={updateForm} errors={formErrors} />
+                    <form
+                        id="employee-form"
+                        onSubmit={e => { e.preventDefault(); handleSave(); }}
+                        style={{ display: 'contents' }}
+                    >
+                        <EmployeeForm form={form} onChange={updateForm} errors={formErrors} />
+                    </form>
                 </Stack>
             </Panel>
 
@@ -455,6 +476,8 @@ const EmployeesPage: FC = (): ReactElement => {
                 onConfirm={handleDeleteConfirm}
                 onDismiss={() => { if (!deleting) setDeleteTarget(null); }}
             />
+
+            <ToastBar message={toastMessage} />
         </Stack>
     );
 };

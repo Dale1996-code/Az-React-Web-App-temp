@@ -1,4 +1,4 @@
-import { FC, ReactElement, useCallback, useEffect, useState } from 'react';
+import { FC, ReactElement, useCallback, useEffect, useRef, useState } from 'react';
 import {
     Checkbox,
     DefaultButton,
@@ -23,11 +23,14 @@ import {
 } from '../services/coachingService';
 import { useCrudPanel } from '../hooks/useCrudPanel';
 import { useEmployees } from '../hooks/useEmployees';
+import { useToast } from '../hooks/useToast';
 import { todayISO, ISO_DATE_RE } from '../utils/dateUtils';
+import { extractApiError } from '../utils/errorUtils';
 import ListState from '../components/ListState';
 import PanelFooter from '../components/PanelFooter';
 import DeleteDialog from '../components/DeleteDialog';
 import ErrorBar from '../components/ErrorBar';
+import ToastBar from '../components/ToastBar';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -170,14 +173,14 @@ const CoachingRow: FC<CoachingRowProps> = ({
                         text="Edit"
                         iconProps={{ iconName: 'Edit' }}
                         onClick={() => onEdit(record)}
-                        styles={{ root: { minWidth: 0, padding: '0 10px', height: 28 } }}
+                        styles={{ root: { minWidth: 0, padding: '0 10px', height: 44 } }}
                     />
                     <DefaultButton
                         text="Remove"
                         iconProps={{ iconName: 'Delete' }}
                         onClick={() => onDelete(record)}
                         styles={{
-                            root: { minWidth: 0, padding: '0 10px', height: 28 },
+                            root: { minWidth: 0, padding: '0 10px', height: 44 },
                             label: { color: '#a4262c' },
                         }}
                     />
@@ -202,6 +205,16 @@ const CoachingForm: FC<CoachingFormProps> = ({
     errors,
     employeeOptions,
 }): ReactElement => {
+    const firstDropdownRef = useRef<HTMLDivElement | null>(null);
+
+    useEffect(() => {
+        const id = setTimeout(() => {
+            const btn = firstDropdownRef.current?.querySelector('button') as HTMLElement | null;
+            btn?.focus();
+        }, 50);
+        return () => clearTimeout(id);
+    }, []);
+
     const toggleIssue = (label: string, checked: boolean) => {
         const next = checked
             ? [...form.issues, label]
@@ -211,23 +224,25 @@ const CoachingForm: FC<CoachingFormProps> = ({
 
     return (
         <Stack tokens={stackGaps} style={{ padding: '0 16px' }}>
-            <Dropdown
-                label="Employee"
-                required
-                selectedKey={form.employeeId || null}
-                options={employeeOptions}
-                onChange={(_, opt) => onChange({ employeeId: (opt?.key as string) ?? '' })}
-                errorMessage={errors.employeeId}
-                placeholder="Select employee…"
-            />
+            <div ref={firstDropdownRef}>
+                <Dropdown
+                    label="Employee"
+                    required
+                    selectedKey={form.employeeId || null}
+                    options={employeeOptions}
+                    onChange={(_, opt) => onChange({ employeeId: (opt?.key as string) ?? '' })}
+                    errorMessage={errors.employeeId}
+                    placeholder="Select employee…"
+                />
+            </div>
 
             <TextField
                 label="Session date"
                 required
+                type="date"
                 value={form.storeDate}
                 onChange={(_, v) => onChange({ storeDate: v ?? '' })}
                 errorMessage={errors.storeDate}
-                placeholder="YYYY-MM-DD"
             />
 
             <TextField
@@ -266,10 +281,10 @@ const CoachingForm: FC<CoachingFormProps> = ({
 
             <TextField
                 label="Follow-up date"
+                type="date"
                 value={form.followUpDate}
                 onChange={(_, v) => onChange({ followUpDate: v ?? '' })}
                 errorMessage={errors.followUpDate}
-                placeholder="YYYY-MM-DD (optional)"
             />
 
             <TextField
@@ -304,6 +319,7 @@ const CoachingPage: FC = (): ReactElement => {
     const [filterEmployeeId, setFilterEmployeeId] = useState('');
 
     const { employeeMap, employeeOptions } = useEmployees();
+    const { toastMessage, showToast } = useToast();
     const employeeFilterOptions: IDropdownOption[] = [
         { key: '', text: 'All employees' },
         ...employeeOptions,
@@ -333,8 +349,8 @@ const CoachingPage: FC = (): ReactElement => {
             if (employeeId) query.employeeId = employeeId;
             const data = await getCoachingRecords(query);
             setRecords(data);
-        } catch {
-            setListError('Failed to load coaching records. Please try again.');
+        } catch (err) {
+            setListError(extractApiError(err, 'Failed to load coaching records. Please try again.'));
         } finally {
             setLoading(false);
         }
@@ -398,13 +414,15 @@ const CoachingPage: FC = (): ReactElement => {
         try {
             if (editing) {
                 await updateCoachingRecord(editing.id, payload);
+                showToast('Coaching record updated');
             } else {
                 await createCoachingRecord(payload);
+                showToast('Coaching record saved');
             }
             setPanelOpen(false);
             await load(filterDate, filterEmployeeId);
-        } catch {
-            setSaveError('Save failed. Check your inputs and try again.');
+        } catch (err) {
+            setSaveError(extractApiError(err, 'Save failed. Check your inputs and try again.'));
         } finally {
             setSaving(false);
         }
@@ -419,9 +437,10 @@ const CoachingPage: FC = (): ReactElement => {
         try {
             await deleteCoachingRecord(deleteTarget.id);
             setDeleteTarget(null);
+            showToast('Coaching record removed');
             await load(filterDate, filterEmployeeId);
-        } catch {
-            setDeleteError('Delete failed. Please try again.');
+        } catch (err) {
+            setDeleteError(extractApiError(err, 'Delete failed. Please try again.'));
         } finally {
             setDeleting(false);
         }
@@ -437,7 +456,7 @@ const CoachingPage: FC = (): ReactElement => {
     // ── Render ─────────────────────────────────────────────────────────────────
 
     return (
-        <Stack tokens={stackPadding} style={{ maxWidth: 960, margin: '0 auto', width: '100%' }}>
+        <Stack tokens={stackPadding} className="page-container" style={{ maxWidth: 960, margin: '0 auto', width: '100%' }}>
             {/* Page header */}
             <Stack.Item tokens={stackItemPadding}>
                 <Stack
@@ -466,12 +485,12 @@ const CoachingPage: FC = (): ReactElement => {
 
             {/* Filters */}
             <Stack.Item tokens={stackItemPadding}>
-                <Stack horizontal wrap tokens={{ childrenGap: 12 }} verticalAlign="end">
+                <Stack horizontal wrap tokens={{ childrenGap: 12 }} verticalAlign="end" className="filter-row">
                     <TextField
                         label="Date"
+                        type="date"
                         value={filterDate}
                         onChange={(_, v) => setFilterDate(v ?? '')}
-                        placeholder="YYYY-MM-DD"
                         styles={{ root: { width: 160 } }}
                     />
                     <Dropdown
@@ -543,7 +562,7 @@ const CoachingPage: FC = (): ReactElement => {
                 type={PanelType.smallFixedFar}
                 headerText={editing ? 'Edit Coaching Record' : 'New Coaching Record'}
                 onRenderFooterContent={() => (
-                    <PanelFooter saving={saving} onSave={handleSave} onCancel={closePanel} />
+                    <PanelFooter saving={saving} onSave={handleSave} onCancel={closePanel} formId="coaching-form" />
                 )}
                 isFooterAtBottom
             >
@@ -557,12 +576,18 @@ const CoachingPage: FC = (): ReactElement => {
                             {saveError}
                         </MessageBar>
                     )}
-                    <CoachingForm
-                        form={form}
-                        onChange={updateForm}
-                        errors={formErrors}
-                        employeeOptions={employeeOptions}
-                    />
+                    <form
+                        id="coaching-form"
+                        onSubmit={e => { e.preventDefault(); handleSave(); }}
+                        style={{ display: 'contents' }}
+                    >
+                        <CoachingForm
+                            form={form}
+                            onChange={updateForm}
+                            errors={formErrors}
+                            employeeOptions={employeeOptions}
+                        />
+                    </form>
                 </Stack>
             </Panel>
 
@@ -578,6 +603,8 @@ const CoachingPage: FC = (): ReactElement => {
                 onConfirm={handleDeleteConfirm}
                 onDismiss={() => { if (!deleting) setDeleteTarget(null); }}
             />
+
+            <ToastBar message={toastMessage} />
         </Stack>
     );
 };

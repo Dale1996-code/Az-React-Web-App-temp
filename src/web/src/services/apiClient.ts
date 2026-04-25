@@ -8,6 +8,7 @@ import config from '../config';
  */
 const apiClient = axios.create({
     baseURL: config.api.baseUrl,
+    timeout: 15000,
     headers: {
         'Content-Type': 'application/json',
     },

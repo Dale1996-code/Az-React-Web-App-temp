@@ -1,4 +1,4 @@
-import { FC, ReactElement, useCallback, useEffect, useState } from 'react';
+import { FC, ReactElement, useCallback, useEffect, useRef, useState } from 'react';
 import {
     DefaultButton,
     Dropdown,
@@ -16,11 +16,14 @@ import { DailySummary, SummaryFormData } from '../models/summary';
 import { getSummaries, createSummary, updateSummary, deleteSummary } from '../services/summaryService';
 import { useCrudPanel } from '../hooks/useCrudPanel';
 import { useEmployees } from '../hooks/useEmployees';
+import { useToast } from '../hooks/useToast';
 import { todayISO, ISO_DATE_RE } from '../utils/dateUtils';
+import { extractApiError } from '../utils/errorUtils';
 import ListState from '../components/ListState';
 import PanelFooter from '../components/PanelFooter';
 import DeleteDialog from '../components/DeleteDialog';
 import ErrorBar from '../components/ErrorBar';
+import ToastBar from '../components/ToastBar';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -144,7 +147,7 @@ const SummaryRow: FC<SummaryRowProps> = ({ summary, employeeMap, onEdit, onDelet
                 {summary.missedWork && (
                     <Stack.Item style={{ marginBottom: 4 }}>
                         <Text variant="small" style={{ fontWeight: 600, color: '#d83b01' }}>
-                            Missed:{' '}
+                            Carry-overs:{' '}
                         </Text>
                         <Text variant="small" style={{ color: '#323130' }}>
                             {preview(summary.missedWork)}
@@ -175,14 +178,14 @@ const SummaryRow: FC<SummaryRowProps> = ({ summary, employeeMap, onEdit, onDelet
                         text="Edit"
                         iconProps={{ iconName: 'Edit' }}
                         onClick={() => onEdit(summary)}
-                        styles={{ root: { minWidth: 0, padding: '0 10px', height: 28 } }}
+                        styles={{ root: { minWidth: 0, padding: '0 10px', height: 44 } }}
                     />
                     <DefaultButton
                         text="Remove"
                         iconProps={{ iconName: 'Delete' }}
                         onClick={() => onDelete(summary)}
                         styles={{
-                            root: { minWidth: 0, padding: '0 10px', height: 28 },
+                            root: { minWidth: 0, padding: '0 10px', height: 44 },
                             label: { color: '#a4262c' },
                         }}
                     />
@@ -201,76 +204,86 @@ type SummaryFormProps = {
     employeeOptions: IDropdownOption[];
 };
 
-const SummaryForm: FC<SummaryFormProps> = ({ form, onChange, errors, employeeOptions }): ReactElement => (
-    <Stack tokens={stackGaps} style={{ padding: '0 16px' }}>
-        <TextField
-            label="Date"
-            required
-            value={form.storeDate}
-            onChange={(_, v) => onChange({ storeDate: v ?? '' })}
-            errorMessage={errors.storeDate}
-            placeholder="YYYY-MM-DD"
-        />
+const SummaryForm: FC<SummaryFormProps> = ({ form, onChange, errors, employeeOptions }): ReactElement => {
+    const firstInputRef = useRef<HTMLInputElement | null>(null);
 
-        <Dropdown
-            label="Shift"
-            required
-            selectedKey={form.shiftLabel || null}
-            options={SHIFT_OPTIONS}
-            onChange={(_, opt) => onChange({ shiftLabel: (opt?.key as string) ?? '' })}
-            errorMessage={errors.shiftLabel}
-            placeholder="Select shift…"
-        />
+    useEffect(() => {
+        const id = setTimeout(() => firstInputRef.current?.focus(), 50);
+        return () => clearTimeout(id);
+    }, []);
 
-        <Dropdown
-            label="Written by"
-            selectedKey={form.authorEmployeeId || null}
-            options={[{ key: '', text: 'None / unknown' }, ...employeeOptions]}
-            onChange={(_, opt) => onChange({ authorEmployeeId: (opt?.key as string) ?? '' })}
-            placeholder="Select employee (optional)…"
-        />
+    return (
+        <Stack tokens={stackGaps} style={{ padding: '0 16px' }}>
+            <TextField
+                label="Date"
+                required
+                type="date"
+                value={form.storeDate}
+                onChange={(_, v) => onChange({ storeDate: v ?? '' })}
+                errorMessage={errors.storeDate}
+                componentRef={r => { firstInputRef.current = (r as unknown as { _textElement?: { value: HTMLInputElement } })?._textElement?.value ?? null; }}
+            />
 
-        <TextField
-            label="Completed work"
-            multiline
-            rows={3}
-            resizable={false}
-            value={form.completedWork}
-            onChange={(_, v) => onChange({ completedWork: v ?? '' })}
-            placeholder="What was accomplished this shift…"
-        />
+            <Dropdown
+                label="Shift"
+                required
+                selectedKey={form.shiftLabel || null}
+                options={SHIFT_OPTIONS}
+                onChange={(_, opt) => onChange({ shiftLabel: (opt?.key as string) ?? '' })}
+                errorMessage={errors.shiftLabel}
+                placeholder="Select shift…"
+            />
 
-        <TextField
-            label="Missed work / carry-overs"
-            multiline
-            rows={3}
-            resizable={false}
-            value={form.missedWork}
-            onChange={(_, v) => onChange({ missedWork: v ?? '' })}
-            placeholder="Tasks not finished, items to carry forward…"
-        />
+            <Dropdown
+                label="Written by"
+                selectedKey={form.authorEmployeeId || null}
+                options={[{ key: '', text: 'None / unknown' }, ...employeeOptions]}
+                onChange={(_, opt) => onChange({ authorEmployeeId: (opt?.key as string) ?? '' })}
+                placeholder="Select employee (optional)…"
+            />
 
-        <TextField
-            label="Follow-up items"
-            multiline
-            rows={3}
-            resizable={false}
-            value={form.followUpItems}
-            onChange={(_, v) => onChange({ followUpItems: v ?? '' })}
-            placeholder="Action items for next shift or management…"
-        />
+            <TextField
+                label="Completed work"
+                multiline
+                rows={3}
+                resizable={false}
+                value={form.completedWork}
+                onChange={(_, v) => onChange({ completedWork: v ?? '' })}
+                placeholder="What was accomplished this shift…"
+            />
 
-        <TextField
-            label="General notes"
-            multiline
-            rows={4}
-            resizable={false}
-            value={form.generalNotes}
-            onChange={(_, v) => onChange({ generalNotes: v ?? '' })}
-            placeholder="Anything else worth noting — staffing, customer feedback, incidents…"
-        />
-    </Stack>
-);
+            <TextField
+                label="Carry-over items"
+                multiline
+                rows={3}
+                resizable={false}
+                value={form.missedWork}
+                onChange={(_, v) => onChange({ missedWork: v ?? '' })}
+                placeholder="Tasks not finished, items to carry forward…"
+            />
+
+            <TextField
+                label="Follow-up items"
+                multiline
+                rows={3}
+                resizable={false}
+                value={form.followUpItems}
+                onChange={(_, v) => onChange({ followUpItems: v ?? '' })}
+                placeholder="Action items for next shift or management…"
+            />
+
+            <TextField
+                label="General notes"
+                multiline
+                rows={4}
+                resizable={false}
+                value={form.generalNotes}
+                onChange={(_, v) => onChange({ generalNotes: v ?? '' })}
+                placeholder="Anything else worth noting — staffing, customer feedback, incidents…"
+            />
+        </Stack>
+    );
+};
 
 // ── SummaryPage ────────────────────────────────────────────────────────────────
 
@@ -283,6 +296,7 @@ const SummaryPage: FC = (): ReactElement => {
     const [filterShift, setFilterShift] = useState('');
 
     const { employeeMap, employeeOptions } = useEmployees();
+    const { toastMessage, showToast } = useToast();
 
     const {
         panelOpen, setPanelOpen,
@@ -310,8 +324,8 @@ const SummaryPage: FC = (): ReactElement => {
             setSummaries(data.sort((a, b) =>
                 b.storeDate.localeCompare(a.storeDate) || b.id.localeCompare(a.id)
             ));
-        } catch {
-            setListError('Failed to load summaries. Please try again.');
+        } catch (err) {
+            setListError(extractApiError(err, 'Failed to load summaries. Please try again.'));
         } finally {
             setLoading(false);
         }
@@ -369,13 +383,15 @@ const SummaryPage: FC = (): ReactElement => {
         try {
             if (editing) {
                 await updateSummary(editing.id, payload);
+                showToast('Summary updated');
             } else {
                 await createSummary(payload);
+                showToast('Summary saved');
             }
             setPanelOpen(false);
             await load(filterDate, filterShift);
-        } catch {
-            setSaveError('Save failed. Check your inputs and try again.');
+        } catch (err) {
+            setSaveError(extractApiError(err, 'Save failed. Check your inputs and try again.'));
         } finally {
             setSaving(false);
         }
@@ -390,9 +406,10 @@ const SummaryPage: FC = (): ReactElement => {
         try {
             await deleteSummary(deleteTarget.id);
             setDeleteTarget(null);
+            showToast('Summary removed');
             await load(filterDate, filterShift);
-        } catch {
-            setDeleteError('Delete failed. Please try again.');
+        } catch (err) {
+            setDeleteError(extractApiError(err, 'Delete failed. Please try again.'));
         } finally {
             setDeleting(false);
         }
@@ -401,7 +418,7 @@ const SummaryPage: FC = (): ReactElement => {
     // ── Render ─────────────────────────────────────────────────────────────────
 
     return (
-        <Stack tokens={stackPadding} style={{ maxWidth: 960, margin: '0 auto', width: '100%' }}>
+        <Stack tokens={stackPadding} className="page-container" style={{ maxWidth: 960, margin: '0 auto', width: '100%' }}>
             {/* Page header */}
             <Stack.Item tokens={stackItemPadding}>
                 <Stack
@@ -414,7 +431,7 @@ const SummaryPage: FC = (): ReactElement => {
                     <Stack.Item>
                         <Text variant="xxLarge" block style={{ fontWeight: 600 }}>Daily Summary</Text>
                         <Text variant="medium" style={{ color: '#605e5c' }}>
-                            Shift closeout — completed work, missed tasks, and follow-up items
+                            Shift closeout — completed work, carry-overs, and follow-up items
                         </Text>
                     </Stack.Item>
                     <Stack.Item>
@@ -430,12 +447,12 @@ const SummaryPage: FC = (): ReactElement => {
 
             {/* Filters */}
             <Stack.Item tokens={stackItemPadding}>
-                <Stack horizontal wrap tokens={{ childrenGap: 12 }} verticalAlign="end">
+                <Stack horizontal wrap tokens={{ childrenGap: 12 }} verticalAlign="end" className="filter-row">
                     <TextField
                         label="Date"
+                        type="date"
                         value={filterDate}
                         onChange={(_, v) => setFilterDate(v ?? '')}
-                        placeholder="YYYY-MM-DD"
                         styles={{ root: { width: 150 } }}
                     />
                     <Dropdown
@@ -507,7 +524,7 @@ const SummaryPage: FC = (): ReactElement => {
                 type={PanelType.smallFixedFar}
                 headerText={editing ? 'Edit Summary' : 'New Shift Summary'}
                 onRenderFooterContent={() => (
-                    <PanelFooter saving={saving} onSave={handleSave} onCancel={closePanel} />
+                    <PanelFooter saving={saving} onSave={handleSave} onCancel={closePanel} formId="summary-form" />
                 )}
                 isFooterAtBottom
             >
@@ -521,12 +538,18 @@ const SummaryPage: FC = (): ReactElement => {
                             {saveError}
                         </MessageBar>
                     )}
-                    <SummaryForm
-                        form={form}
-                        onChange={updateForm}
-                        errors={formErrors}
-                        employeeOptions={employeeOptions}
-                    />
+                    <form
+                        id="summary-form"
+                        onSubmit={e => { e.preventDefault(); handleSave(); }}
+                        style={{ display: 'contents' }}
+                    >
+                        <SummaryForm
+                            form={form}
+                            onChange={updateForm}
+                            errors={formErrors}
+                            employeeOptions={employeeOptions}
+                        />
+                    </form>
                 </Stack>
             </Panel>
 
@@ -542,6 +565,8 @@ const SummaryPage: FC = (): ReactElement => {
                 onConfirm={handleDeleteConfirm}
                 onDismiss={() => { if (!deleting) setDeleteTarget(null); }}
             />
+
+            <ToastBar message={toastMessage} />
         </Stack>
     );
 };

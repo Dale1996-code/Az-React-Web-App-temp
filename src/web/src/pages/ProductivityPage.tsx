@@ -1,4 +1,4 @@
-import { FC, ReactElement, useCallback, useEffect, useState } from 'react';
+import { FC, ReactElement, useCallback, useEffect, useRef, useState } from 'react';
 import {
     DefaultButton,
     Dropdown,
@@ -21,11 +21,14 @@ import {
 } from '../services/productivityService';
 import { useCrudPanel } from '../hooks/useCrudPanel';
 import { useEmployees } from '../hooks/useEmployees';
+import { useToast } from '../hooks/useToast';
 import { todayISO, ISO_DATE_RE } from '../utils/dateUtils';
+import { extractApiError } from '../utils/errorUtils';
 import ListState from '../components/ListState';
 import PanelFooter from '../components/PanelFooter';
 import DeleteDialog from '../components/DeleteDialog';
 import ErrorBar from '../components/ErrorBar';
+import ToastBar from '../components/ToastBar';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -93,19 +96,19 @@ const ProductivityRow: FC<ProductivityRowProps> = ({
                 </Text>
             </Stack.Item>
 
-            {/* Key metrics */}
+            {/* Key metrics — show 0 instead of dash for unset numeric fields */}
             <Stack.Item grow={2} style={{ minWidth: 240 }}>
                 <Stack horizontal tokens={{ childrenGap: 20 }} wrap>
                     <Stack.Item>
                         <Text variant="small" style={{ color: '#605e5c', display: 'block' }}>Freight</Text>
                         <Text variant="medium" style={{ fontWeight: 600 }}>
-                            {record.freightStockedUnits != null ? record.freightStockedUnits : '—'}
+                            {record.freightStockedUnits != null ? record.freightStockedUnits : 0}
                         </Text>
                     </Stack.Item>
                     <Stack.Item>
                         <Text variant="small" style={{ color: '#605e5c', display: 'block' }}>Break (min)</Text>
                         <Text variant="medium" style={{ fontWeight: 600 }}>
-                            {record.breakMinutes != null ? record.breakMinutes : '—'}
+                            {record.breakMinutes != null ? record.breakMinutes : 0}
                         </Text>
                     </Stack.Item>
                     <Stack.Item style={{ minWidth: 100 }}>
@@ -140,14 +143,14 @@ const ProductivityRow: FC<ProductivityRowProps> = ({
                         text="Edit"
                         iconProps={{ iconName: 'Edit' }}
                         onClick={() => onEdit(record)}
-                        styles={{ root: { minWidth: 0, padding: '0 10px', height: 28 } }}
+                        styles={{ root: { minWidth: 0, padding: '0 10px', height: 44 } }}
                     />
                     <DefaultButton
                         text="Remove"
                         iconProps={{ iconName: 'Delete' }}
                         onClick={() => onDelete(record)}
                         styles={{
-                            root: { minWidth: 0, padding: '0 10px', height: 28 },
+                            root: { minWidth: 0, padding: '0 10px', height: 44 },
                             label: { color: '#a4262c' },
                         }}
                     />
@@ -172,25 +175,37 @@ const ProductivityForm: FC<ProductivityFormProps> = ({
     errors,
     employeeOptions,
 }): ReactElement => {
+    const firstDropdownRef = useRef<HTMLDivElement | null>(null);
+
+    useEffect(() => {
+        const id = setTimeout(() => {
+            const btn = firstDropdownRef.current?.querySelector('button') as HTMLElement | null;
+            btn?.focus();
+        }, 50);
+        return () => clearTimeout(id);
+    }, []);
+
     return (
         <Stack tokens={stackGaps} style={{ padding: '0 16px' }}>
-            <Dropdown
-                label="Employee"
-                required
-                selectedKey={form.employeeId || null}
-                options={employeeOptions}
-                onChange={(_, opt) => onChange({ employeeId: (opt?.key as string) ?? '' })}
-                errorMessage={errors.employeeId}
-                placeholder="Select employee…"
-            />
+            <div ref={firstDropdownRef}>
+                <Dropdown
+                    label="Employee"
+                    required
+                    selectedKey={form.employeeId || null}
+                    options={employeeOptions}
+                    onChange={(_, opt) => onChange({ employeeId: (opt?.key as string) ?? '' })}
+                    errorMessage={errors.employeeId}
+                    placeholder="Select employee…"
+                />
+            </div>
 
             <TextField
                 label="Shift date"
                 required
+                type="date"
                 value={form.storeDate}
                 onChange={(_, v) => onChange({ storeDate: v ?? '' })}
                 errorMessage={errors.storeDate}
-                placeholder="YYYY-MM-DD"
             />
 
             <Stack horizontal tokens={{ childrenGap: 12 }} wrap>
@@ -256,6 +271,7 @@ const ProductivityPage: FC = (): ReactElement => {
     const [filterDate, setFilterDate] = useState(todayISO());
 
     const { employeeMap, employeeOptions } = useEmployees();
+    const { toastMessage, showToast } = useToast();
 
     const {
         panelOpen, setPanelOpen,
@@ -278,8 +294,8 @@ const ProductivityPage: FC = (): ReactElement => {
         try {
             const data = await getProductivityRecords({ date });
             setRecords(data);
-        } catch {
-            setListError('Failed to load productivity records. Please try again.');
+        } catch (err) {
+            setListError(extractApiError(err, 'Failed to load productivity records. Please try again.'));
         } finally {
             setLoading(false);
         }
@@ -341,13 +357,15 @@ const ProductivityPage: FC = (): ReactElement => {
         try {
             if (editing) {
                 await updateProductivityRecord(editing.id, payload);
+                showToast('Productivity entry updated');
             } else {
                 await createProductivityRecord(payload);
+                showToast('Productivity entry saved');
             }
             setPanelOpen(false);
             await load(filterDate);
-        } catch {
-            setSaveError('Save failed. Check your inputs and try again.');
+        } catch (err) {
+            setSaveError(extractApiError(err, 'Save failed. Check your inputs and try again.'));
         } finally {
             setSaving(false);
         }
@@ -362,9 +380,10 @@ const ProductivityPage: FC = (): ReactElement => {
         try {
             await deleteProductivityRecord(deleteTarget.id);
             setDeleteTarget(null);
+            showToast('Productivity entry removed');
             await load(filterDate);
-        } catch {
-            setDeleteError('Delete failed. Please try again.');
+        } catch (err) {
+            setDeleteError(extractApiError(err, 'Delete failed. Please try again.'));
         } finally {
             setDeleting(false);
         }
@@ -380,7 +399,7 @@ const ProductivityPage: FC = (): ReactElement => {
     // ── Render ─────────────────────────────────────────────────────────────────
 
     return (
-        <Stack tokens={stackPadding} style={{ maxWidth: 960, margin: '0 auto', width: '100%' }}>
+        <Stack tokens={stackPadding} className="page-container" style={{ maxWidth: 960, margin: '0 auto', width: '100%' }}>
             {/* Page header */}
             <Stack.Item tokens={stackItemPadding}>
                 <Stack
@@ -409,12 +428,12 @@ const ProductivityPage: FC = (): ReactElement => {
 
             {/* Date filter */}
             <Stack.Item tokens={stackItemPadding}>
-                <Stack horizontal wrap tokens={{ childrenGap: 12 }} verticalAlign="end">
+                <Stack horizontal wrap tokens={{ childrenGap: 12 }} verticalAlign="end" className="filter-row">
                     <TextField
                         label="Date"
+                        type="date"
                         value={filterDate}
                         onChange={(_, v) => setFilterDate(v ?? '')}
-                        placeholder="YYYY-MM-DD"
                         styles={{ root: { width: 160 } }}
                     />
                     <DefaultButton
@@ -479,7 +498,7 @@ const ProductivityPage: FC = (): ReactElement => {
                 type={PanelType.smallFixedFar}
                 headerText={editing ? 'Edit Productivity Entry' : 'New Productivity Entry'}
                 onRenderFooterContent={() => (
-                    <PanelFooter saving={saving} onSave={handleSave} onCancel={closePanel} />
+                    <PanelFooter saving={saving} onSave={handleSave} onCancel={closePanel} formId="productivity-form" />
                 )}
                 isFooterAtBottom
             >
@@ -493,12 +512,18 @@ const ProductivityPage: FC = (): ReactElement => {
                             {saveError}
                         </MessageBar>
                     )}
-                    <ProductivityForm
-                        form={form}
-                        onChange={updateForm}
-                        errors={formErrors}
-                        employeeOptions={employeeOptions}
-                    />
+                    <form
+                        id="productivity-form"
+                        onSubmit={e => { e.preventDefault(); handleSave(); }}
+                        style={{ display: 'contents' }}
+                    >
+                        <ProductivityForm
+                            form={form}
+                            onChange={updateForm}
+                            errors={formErrors}
+                            employeeOptions={employeeOptions}
+                        />
+                    </form>
                 </Stack>
             </Panel>
 
@@ -514,6 +539,8 @@ const ProductivityPage: FC = (): ReactElement => {
                 onConfirm={handleDeleteConfirm}
                 onDismiss={() => { if (!deleting) setDeleteTarget(null); }}
             />
+
+            <ToastBar message={toastMessage} />
         </Stack>
     );
 };
