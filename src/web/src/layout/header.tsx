@@ -59,8 +59,6 @@ const Header: FC<HeaderProps> = ({ onToggleSidebar }): ReactElement => {
             </Stack.Item>
             <Stack.Item>
                 <Stack horizontal styles={toolStackClass} grow={1}>
-                    <IconButton aria-label="Settings" iconProps={{ iconName: 'Settings', ...iconProps }} />
-                    <IconButton aria-label="Help" iconProps={{ iconName: 'Help', ...iconProps }} />
                     <Persona size={PersonaSize.size24} text="Shift Lead" />
                 </Stack>
             </Stack.Item>

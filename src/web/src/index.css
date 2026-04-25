@@ -59,3 +59,30 @@ code {
     display: block;
   }
 }
+
+/* ── Mobile UX improvements ──────────────────────────────────────────────────── */
+
+@media (max-width: 600px) {
+  /* Page content padding */
+  .page-container {
+    padding: 12px !important;
+  }
+
+  /* Stack filter rows vertically and stretch inputs */
+  .filter-row > * {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .filter-row input,
+  .filter-row .ms-Dropdown {
+    min-width: 100% !important;
+  }
+
+  /* Panels full-width on mobile */
+  .ms-Panel-main {
+    min-width: 100vw !important;
+    max-width: 100vw !important;
+    width: 100vw !important;
+  }
+}
