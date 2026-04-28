@@ -48,8 +48,11 @@ services:
     language: js
     host: appservice
     hooks:
-      # prepackage: install deps, compile TypeScript (lint + tsc → dist/), then
-      # prune devDependencies so the deployed artifact is production-only.
+      # prepackage: install deps (incl. dev), compile TypeScript (tsc → dist/),
+      # then prune devDependencies so the deployed artifact is production-only.
+      # `--include=dev` is required because azd/App Service runs the hook with
+      # NODE_ENV=production, which would otherwise cause `npm ci` to skip
+      # devDependencies (typescript, @types/node) and break the build.
       # This is the authoritative API build step — required for both `azd up`
       # (local clean checkout) and `azd deploy` (CI), because App Service runs
       # `node .` which resolves main=dist/index.js and expects compiled output.
@@ -57,9 +60,9 @@ services:
         windows:
           shell: pwsh
           run: |
-            npm ci
+            npm ci --include=dev
             npm run build
             npm prune --omit=dev
         posix:
           shell: sh
-          run: 'npm ci && npm run build && npm prune --omit=dev'
+          run: 'npm ci --include=dev && npm run build && npm prune --omit=dev'

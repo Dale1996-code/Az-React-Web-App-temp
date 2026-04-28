@@ -6,6 +6,7 @@
 # Source files not needed at runtime (compiled output lives in dist/)
 src/
 tsconfig.json
+tsconfig.build.json
 babel.config.js
 
 # Documentation and tooling not needed at runtime
