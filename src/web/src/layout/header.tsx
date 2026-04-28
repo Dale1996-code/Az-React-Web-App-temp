@@ -1,5 +1,18 @@
-import { FontIcon, getTheme, IconButton, IIconProps, IStackStyles, mergeStyles, Persona, PersonaSize, Stack, Text } from '@fluentui/react';
+import {
+    FontIcon,
+    getTheme,
+    IconButton,
+    IIconProps,
+    IStackStyles,
+    mergeStyles,
+    Persona,
+    PersonaSize,
+    Stack,
+    Text,
+    DefaultButton,
+} from '@fluentui/react';
 import { FC, ReactElement } from 'react';
+import { useAuthInfo } from '../contexts/authContext';
 
 const theme = getTheme();
 
@@ -39,6 +52,8 @@ type HeaderProps = {
 };
 
 const Header: FC<HeaderProps> = ({ onToggleSidebar }): ReactElement => {
+    const { account, authEnabled, login, logout } = useAuthInfo();
+
     return (
         <Stack horizontal>
             {/* Hamburger — visible on mobile only via CSS */}
@@ -58,8 +73,42 @@ const Header: FC<HeaderProps> = ({ onToggleSidebar }): ReactElement => {
                 <div></div>
             </Stack.Item>
             <Stack.Item>
-                <Stack horizontal styles={toolStackClass} grow={1}>
-                    <Persona size={PersonaSize.size24} text="Shift Lead" />
+                <Stack horizontal styles={toolStackClass} tokens={{ childrenGap: 8 }} grow={1}>
+                    {authEnabled ? (
+                        account ? (
+                            <>
+                                <Persona
+                                    size={PersonaSize.size24}
+                                    text={account.name ?? account.username}
+                                />
+                                <DefaultButton
+                                    text="Sign out"
+                                    onClick={logout}
+                                    styles={{
+                                        root: {
+                                            minWidth: 'auto',
+                                            height: 28,
+                                            padding: '0 12px',
+                                        }
+                                    }}
+                                />
+                            </>
+                        ) : (
+                            <DefaultButton
+                                text="Sign in"
+                                onClick={login}
+                                styles={{
+                                    root: {
+                                        minWidth: 'auto',
+                                        height: 28,
+                                        padding: '0 12px',
+                                    }
+                                }}
+                            />
+                        )
+                    ) : (
+                        <Persona size={PersonaSize.size24} text="Shift Lead" />
+                    )}
                 </Stack>
             </Stack.Item>
         </Stack>

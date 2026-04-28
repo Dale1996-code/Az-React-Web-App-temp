@@ -1,0 +1,57 @@
+import {
+    PublicClientApplication,
+    Configuration,
+    InteractionRequiredAuthError,
+    SilentRequest,
+} from '@azure/msal-browser';
+import config from '../config';
+
+function buildMsalInstance(): PublicClientApplication | null {
+    if (!config.auth.enabled) return null;
+
+    const msalConfig: Configuration = {
+        auth: {
+            clientId: config.auth.clientId,
+            authority: `https://login.microsoftonline.com/${config.auth.tenantId}`,
+            redirectUri: window.location.origin,
+            postLogoutRedirectUri: window.location.origin,
+        },
+        cache: {
+            cacheLocation: 'sessionStorage',
+            storeAuthStateInCookie: false,
+        },
+    };
+
+    return new PublicClientApplication(msalConfig);
+}
+
+export const msalInstance = buildMsalInstance();
+
+export const loginRequest = {
+    scopes: config.auth.apiScope ? [config.auth.apiScope] : ['openid', 'profile'],
+};
+
+export async function acquireToken(): Promise<string | null> {
+    if (!msalInstance) return null;
+
+    const accounts = msalInstance.getAllAccounts();
+    if (accounts.length === 0) return null;
+
+    const request: SilentRequest = {
+        scopes: loginRequest.scopes,
+        account: accounts[0],
+    };
+
+    try {
+        const result = await msalInstance.acquireTokenSilent(request);
+        return result.accessToken;
+    } catch (err) {
+        if (err instanceof InteractionRequiredAuthError) {
+            // Interactive auth is handled by AuthProvider; proceed without token for now.
+            console.warn('[Auth] Silent token requires interaction; request will proceed without Authorization header.');
+        } else {
+            console.warn('[Auth] Token acquisition failed:', err);
+        }
+        return null;
+    }
+}

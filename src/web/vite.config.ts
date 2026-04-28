@@ -27,6 +27,10 @@ export default defineConfig({
             '@microsoft/applicationinsights-web',
             '@microsoft/applicationinsights-react-js',
           ],
+          'vendor-msal': [
+            '@azure/msal-browser',
+            '@azure/msal-react',
+          ],
         },
       },
     },
