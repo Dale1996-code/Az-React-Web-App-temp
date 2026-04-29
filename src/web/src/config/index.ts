@@ -23,6 +23,7 @@ export interface AppConfig {
 
 const clientId = import.meta.env.VITE_AZURE_CLIENT_ID ?? '';
 const tenantId = import.meta.env.VITE_AZURE_TENANT_ID ?? '';
+const apiScope = import.meta.env.VITE_AZURE_API_SCOPE ?? '';
 
 const config: AppConfig = {
     api: {
@@ -34,8 +35,8 @@ const config: AppConfig = {
     auth: {
         clientId,
         tenantId,
-        apiScope: import.meta.env.VITE_AZURE_API_SCOPE ?? '',
-        enabled: !!(clientId && tenantId),
+        apiScope,
+        enabled: !!(clientId && tenantId && apiScope),
     },
 };
 

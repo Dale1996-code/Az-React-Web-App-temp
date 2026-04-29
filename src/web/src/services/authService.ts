@@ -27,19 +27,28 @@ function buildMsalInstance(): PublicClientApplication | null {
 
 export const msalInstance = buildMsalInstance();
 
+// MSAL Browser 3.x requires initialize() before any other method is called.
+// Store the promise so acquireToken() can await it safely from the axios interceptor.
+export const msalInit: Promise<void> = msalInstance
+    ? msalInstance.initialize()
+    : Promise.resolve();
+
 export const loginRequest = {
-    scopes: config.auth.apiScope ? [config.auth.apiScope] : ['openid', 'profile'],
+    scopes: config.auth.apiScope
+        ? config.auth.apiScope.split(' ')
+        : ['openid', 'profile'],
 };
 
 export async function acquireToken(): Promise<string | null> {
     if (!msalInstance) return null;
+    await msalInit;
 
-    const accounts = msalInstance.getAllAccounts();
-    if (accounts.length === 0) return null;
+    const account = msalInstance.getActiveAccount() ?? msalInstance.getAllAccounts()[0];
+    if (!account) return null;
 
     const request: SilentRequest = {
         scopes: loginRequest.scopes,
-        account: accounts[0],
+        account,
     };
 
     try {

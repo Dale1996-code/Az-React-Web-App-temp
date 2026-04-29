@@ -38,6 +38,9 @@ const MsalBridge: FC<PropsWithChildren> = ({ children }) => {
                 setLoginError(err.message ?? 'Sign-in failed');
             });
         }
+        if (accounts.length > 0 && !instance.getActiveAccount()) {
+            instance.setActiveAccount(accounts[0]);
+        }
     }, [accounts, inProgress, instance, loginError]);
 
     const authInfo: AuthInfo = {
