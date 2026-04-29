@@ -76,12 +76,56 @@ Tests all live in `src/routes/routes.spec.ts` and use `supertest` against the re
 
 ## Web architecture
 
-- **`App.tsx` → `layout/layout.tsx`** — `ThemeProvider` (dark Fluent theme) → `BrowserRouter` → `Telemetry` wrapper → `Layout`. The layout defines all routes: `/`, `/employees`, `/tasks`, `/productivity`, `/coaching`, `/issues`, `/summary`, plus `*` → `Navigate to="/"`. Sidebar open/close state lives in `Layout`.
-- **`services/apiClient.ts`** — a single axios instance with `baseURL = config.api.baseUrl` (from `VITE_API_BASE_URL`, defaulting to `http://localhost:3100`). Every `*Service.ts` imports this and exposes typed CRUD functions matching the API routes.
+- **`App.tsx` → `layout/layout.tsx`** — `ThemeProvider` (dark Fluent theme) → `BrowserRouter` → `Telemetry` → `AuthProvider` → `Layout`. The layout defines all routes: `/`, `/employees`, `/tasks`, `/productivity`, `/coaching`, `/issues`, `/summary`, plus `*` → `Navigate to="/"`. Sidebar open/close state lives in `Layout`.
+- **`services/apiClient.ts`** — a single axios instance with `baseURL = config.api.baseUrl` (from `VITE_API_BASE_URL`, defaulting to `http://localhost:3100`). A request interceptor calls `acquireToken()` and attaches `Authorization: Bearer <token>` when `config.auth.enabled` is true. Every `*Service.ts` imports this and exposes typed CRUD functions matching the API routes.
 - **`components/telemetry.tsx`** — always wraps children in the `TelemetryProvider`. On mount it calls `getApplicationInsights()` in `services/telemetryService.ts`, which short-circuits and returns `undefined` if `VITE_APPLICATIONINSIGHTS_CONNECTION_STRING` is missing or blank — so no SDK is constructed and `trackEvent` becomes a no-op. When the connection string is present the SDK loads once and is cached.
+- **`components/AuthProvider.tsx`** — wraps the app with `MsalProvider` + a `MsalBridge` when `config.auth.enabled` is true (both `VITE_AZURE_CLIENT_ID` and `VITE_AZURE_TENANT_ID` are set). When auth is disabled, it renders children directly with an empty auth context — no MSAL overhead.  `MsalBridge` triggers `loginRedirect` when no account is present and shows a "Signing you in…" overlay during the redirect flow. On error, it surfaces a dismissible message bar.
+- **`contexts/authContext.ts`** — `AuthInfo` context + `useAuthInfo()` hook. Provides `{ account, authEnabled, login(), logout() }` to any component. Safe to call regardless of whether auth is enabled.
+- **`services/authService.ts`** — creates the `PublicClientApplication` singleton (or `null` when auth disabled). Exports `loginRequest` (scopes) and `acquireToken()` for use by the axios interceptor.
 - **Pages** — one page per collection under `pages/`, all following the same Fluent UI pattern (list + Panel for create/edit + Dialog for confirm). Each page owns its own data-fetching via the matching `services/*Service.ts`.
 
 Vite env vars **must** be prefixed `VITE_`. The `VITE_API_BASE_URL` value must include a scheme (`http://` or `https://`).
+
+## Frontend authentication
+
+### Current state
+
+Authentication is **implemented but not enforced**. The frontend acquires tokens and attaches them to every API request when auth is configured; the API middleware exists but currently allows all requests through. This lets the two halves be wired up and tested end-to-end before enforcement is turned on.
+
+### Required app registration values
+
+| Env var | Where to find it |
+|---|---|
+| `VITE_AZURE_CLIENT_ID` | Azure Portal → App registrations → your SPA app → Overview → Application (client) ID |
+| `VITE_AZURE_TENANT_ID` | Azure Portal → App registrations → your SPA app → Overview → Directory (tenant) ID |
+| `VITE_AZURE_API_SCOPE` | Azure Portal → App registrations → your API app → Expose an API → full scope URI, e.g. `api://<api-client-id>/access_as_user` |
+
+### Required frontend environment variables
+
+Set these in `src/web/.env` for local dev (copy from `.env.example`):
+
+```env
+VITE_AZURE_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+VITE_AZURE_TENANT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+VITE_AZURE_API_SCOPE=api://<api-client-id>/access_as_user
+```
+
+For `azd` deployments, add these as outputs in `infra/main.bicep` and extend the `prepackage` hook in `azure.yaml` to write them into `.env.local` alongside the existing vars.
+
+### Local development notes
+
+- Leave all three `VITE_AZURE_*` vars **blank** (or absent) to run the app without any authentication. API calls will have no `Authorization` header.
+- When auth is enabled, the SPA app registration must have `http://localhost:5173` as an allowed redirect URI.
+- Token storage uses `sessionStorage` (cleared when the tab closes). Change `cacheLocation` in `authService.ts` to `'localStorage'` if persistent sessions across tabs are needed.
+- `acquireTokenSilent` is attempted first on every request; it only hits the network if the cached token is near expiry. If interaction is required (e.g. consent), it logs a warning and the request proceeds without a token — the user must navigate to trigger a fresh login via the header "Sign in" button.
+
+### What remains before enforcing production auth
+
+1. **API middleware** — uncomment / enable the bearer-token validation middleware in `src/api/src/app.ts` (or wherever the auth guard lives).
+2. **App registration for the API** — the API App Service needs its own registration with the scope exposed, and the SPA registration needs API permission granted for that scope.
+3. **azd infra** — pipe `VITE_AZURE_CLIENT_ID`, `VITE_AZURE_TENANT_ID`, and `VITE_AZURE_API_SCOPE` through Bicep outputs → `azure.yaml` prepackage hook so they are set at build time in CI/CD.
+4. **Token audience validation** — the API middleware must validate `iss`, `aud`, and `appid`/`azp` claims to match the expected app registration.
+5. **Consent** — ensure admin consent is granted for the API scope in the tenant, or that user consent is allowed by tenant policy.
 
 ## Infra + CI
 

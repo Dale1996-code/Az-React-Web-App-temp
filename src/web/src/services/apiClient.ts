@@ -1,17 +1,23 @@
 import axios from 'axios';
 import config from '../config';
+import { acquireToken } from './authService';
 
-/**
- * Shared axios instance for all Dales Operations API calls.
- * Base URL is set from VITE_API_BASE_URL (injected at build time by azd).
- * Falls back to http://localhost:3100 for local development.
- */
 const apiClient = axios.create({
     baseURL: config.api.baseUrl,
     timeout: 15000,
     headers: {
         'Content-Type': 'application/json',
     },
+});
+
+apiClient.interceptors.request.use(async (requestConfig) => {
+    if (config.auth.enabled) {
+        const token = await acquireToken();
+        if (token) {
+            requestConfig.headers.Authorization = `Bearer ${token}`;
+        }
+    }
+    return requestConfig;
 });
 
 export default apiClient;

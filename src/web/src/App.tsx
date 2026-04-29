@@ -4,6 +4,7 @@ import { ThemeProvider } from '@fluentui/react';
 import { initializeIcons } from '@fluentui/react/lib/Icons';
 import Layout from './layout/layout';
 import Telemetry from './components/telemetry';
+import AuthProvider from './components/AuthProvider';
 import { DarkTheme } from './ux/theme';
 import './App.css';
 
@@ -14,7 +15,9 @@ const App: FC = () => {
         <ThemeProvider applyTo="body" theme={DarkTheme}>
             <BrowserRouter>
                 <Telemetry>
-                    <Layout />
+                    <AuthProvider>
+                        <Layout />
+                    </AuthProvider>
                 </Telemetry>
             </BrowserRouter>
         </ThemeProvider>
