@@ -8,6 +8,7 @@ const ToastBar: FC<Props> = ({ message }) => {
     return (
         <MessageBar
             messageBarType={MessageBarType.success}
+            className="toast-bar"
             styles={{
                 root: {
                     position: 'fixed',
