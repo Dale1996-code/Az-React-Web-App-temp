@@ -24,6 +24,13 @@
 #         Reason: requires SERVICE_WEB_URI and SERVICE_API_URI from azd
 #         provision output and a deployed Playwright-capable agent. Not
 #         practical without a dedicated test stage or agent pool.
+#         NOTE: the Playwright suite now includes an authenticated smoke check
+#         for GET /dashboard (using a service-principal token via OAuth2 client
+#         credentials).  When you add Playwright here, also add the four
+#         pipeline variables/secrets:
+#           SMOKE_AZURE_TENANT_ID, SMOKE_AZURE_CLIENT_ID,
+#           SMOKE_AZURE_CLIENT_SECRET, SMOKE_AZURE_API_SCOPE
+#         Without them the authenticated test is skipped (non-blocking).
 #     - Playwright report artifact upload
 #         Reason: depends on the above smoke test step.
 #

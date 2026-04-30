@@ -161,20 +161,21 @@ jobs:
       - name: Run smoke tests against deployed app
         # Smoke tests validate:
         #   - All 7 route shells render (auth-agnostic; accept loading/empty/list states)
-        #   - GET /health returns 200 (the one endpoint that is always unauthenticated)
-        #   - Frontend reaches the API (/dashboard returns 200 or 401; both are valid)
+        #   - GET /health returns 200 (always unauthenticated)
+        #   - Frontend reaches the API (/dashboard returns 200 or 401; both confirm reachability)
+        #   - Authenticated GET /dashboard returns 200 with valid body shape (when SMOKE_AZURE_*
+        #     secrets are configured — skipped otherwise with a visible reason in the report)
         #
-        # Smoke tests do NOT validate authenticated business endpoints.
-        # NODE_ENV is not set to "production" in the current Bicep configuration,
-        # so auth middleware is bypassed in the deployed environment.  When
-        # NODE_ENV=production is enabled (production hardening), all business
-        # endpoints will require a Bearer token that these tests cannot acquire.
+        # Authenticated smoke check (blocking when secrets are present):
+        #   Requires four repository secrets:
+        #     SMOKE_AZURE_TENANT_ID      — Entra ID tenant ID
+        #     SMOKE_AZURE_CLIENT_ID      — service-principal application (client) ID
+        #     SMOKE_AZURE_CLIENT_SECRET  — service-principal client secret
+        #     SMOKE_AZURE_API_SCOPE      — e.g. api://<api-client-id>/.default
         #
-        # Manual release steps required before enabling production auth hardening:
-        #   1. Set AZURE_AD_TENANT_ID and AZURE_AD_CLIENT_ID on the API App Service.
-        #   2. Verify: curl -H "Authorization: Bearer <token>" $API_URL/dashboard → 200
-        #   3. Verify: curl $API_URL/dashboard (no token) → 401
-        #   4. Confirm frontend MSAL integration is complete before setting NODE_ENV=production.
+        #   The service principal must have the API permission for the above scope granted
+        #   (admin consent or user consent) in your Entra ID tenant.
+        #   The client secret is passed as a GitHub secret and is never echoed in logs.
         run: |
           AZD_ENV=$(azd env get-values)
           WEB_URL=$(echo "$AZD_ENV" | grep '^SERVICE_WEB_URI=' | cut -d'=' -f2- | tr -d '"')
@@ -195,6 +196,13 @@ jobs:
           AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
           AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
           CI: "true"
+          # Authenticated smoke check secrets — configure these to enable the blocking auth gate.
+          # If absent, the authenticated test is skipped (non-blocking) and a reason is shown in
+          # the Playwright report.  Add them as repository secrets in Settings → Secrets and variables.
+          SMOKE_AZURE_TENANT_ID: ${{ secrets.SMOKE_AZURE_TENANT_ID }}
+          SMOKE_AZURE_CLIENT_ID: ${{ secrets.SMOKE_AZURE_CLIENT_ID }}
+          SMOKE_AZURE_CLIENT_SECRET: ${{ secrets.SMOKE_AZURE_CLIENT_SECRET }}
+          SMOKE_AZURE_API_SCOPE: ${{ secrets.SMOKE_AZURE_API_SCOPE }}
 
       - name: Upload Playwright report
         if: always()
