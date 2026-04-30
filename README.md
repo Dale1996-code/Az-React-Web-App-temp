@@ -98,34 +98,19 @@ Before running `azd up` for the first time, confirm the following:
      ```bash
      azd env set ALERT_EMAIL you@example.com
      ```
-3. **Optional pre-readiness step — store Entra ID values now for later hardening.** `AZURE_AD_TENANT_ID`, `AZURE_AD_CLIENT_ID`, and `NODE_ENV=production` are **not** provisioned by Bicep and are **not required for the current internal MVP** — the deployed API runs with auth enforcement bypassed and all endpoints are open. You can pre-populate the Entra ID values now if you want the environment staged for Phase 2 hardening, but **do not set `NODE_ENV=production` until MSAL is wired into the frontend** — doing so will return 401 on every frontend API call and make the app non-functional:
+3. **Configure Entra ID App Registrations before `azd up` to enforce production auth.** Auth is enforced in production when `AZURE_AD_CLIENT_ID` is set. Set all three values in the azd environment before provisioning:
 
-   **Bash (Linux/macOS/WSL):**
    ```bash
-   API_APP=$(azd env get-values | grep '^SERVICE_API_NAME=' | cut -d'=' -f2- | tr -d '"')
-   RG=$(azd env get-values | grep '^AZURE_RESOURCE_GROUP=' | cut -d'=' -f2- | tr -d '"')
+   # API App Registration — enforces Bearer JWT on all business endpoints
+   azd env set AZURE_AD_CLIENT_ID <api-app-registration-client-id>
 
-   # Pre-populate AD values only — do NOT add NODE_ENV=production yet (see Authentication below)
-   az webapp config appsettings set \
-     --name "$API_APP" --resource-group "$RG" \
-     --settings \
-       AZURE_AD_TENANT_ID=<tenant-guid> \
-       AZURE_AD_CLIENT_ID=<api-app-registration-client-id>
+   # SPA App Registration — baked into the web bundle for MSAL token acquisition
+   azd env set VITE_SPA_CLIENT_ID <spa-app-registration-client-id>
+   azd env set VITE_API_SCOPE api://<api-app-registration-client-id>/access_as_user
    ```
 
-   **Windows (PowerShell):**
-   ```powershell
-   $API_APP = (azd env get-values | Select-String '^SERVICE_API_NAME=').Line -replace '^SERVICE_API_NAME=|"', ''
-   $RG      = (azd env get-values | Select-String '^AZURE_RESOURCE_GROUP=').Line -replace '^AZURE_RESOURCE_GROUP=|"', ''
+   If you are not yet ready to configure Entra ID, skip this step — the API deploys without auth enforcement when `AZURE_AD_CLIENT_ID` is blank. See [Authentication](#authentication) for full registration setup instructions.
 
-   az webapp config appsettings set `
-     --name $API_APP --resource-group $RG `
-     --settings `
-       AZURE_AD_TENANT_ID=<tenant-guid> `
-       AZURE_AD_CLIENT_ID=<api-app-registration-client-id>
-   ```
-
-   See [Authentication](#authentication) below for where to find each value.
 4. After `azd up` finishes, run `azd env get-values` and confirm `SERVICE_WEB_URI` and `SERVICE_API_URI` are both present
 5. Open `SERVICE_WEB_URI` in a browser — the app loads with 7 navigation links and the Shift Overview section is visible (confirms end-to-end API connectivity)
 
@@ -309,54 +294,89 @@ CI enforces this: the "Verify OpenAPI spec sync" step diffs the two files and fa
 
 ## Authentication
 
-All business API endpoints (`/employees`, `/tasks`, `/dashboard`, etc.) are designed to require an Azure Entra ID Bearer JWT in the `Authorization: Bearer <token>` header — **but auth enforcement is not currently active in the deployed environment.**
+All business API endpoints (`/employees`, `/tasks`, `/dashboard`, etc.) require an Azure Entra ID Bearer JWT in the `Authorization: Bearer <token>` header **when auth is configured**. The `/health` endpoint is always open (used by Azure App Service probes).
 
-The Bicep configuration does not set `NODE_ENV=production`, so the deployed API runs with auth middleware in bypass mode: all endpoints accept requests without a token. This is intentional for the internal MVP phase while MSAL frontend integration (Phase 2) is not yet complete. You will see `Auth: enforcement disabled — all requests allowed` in the API log stream; this is the expected state.
+**Auth enforcement state depends on `AZURE_AD_CLIENT_ID`:**
 
-**To enable production auth hardening**, three settings must be set on the API App Service. They are intentionally absent from Bicep — the Entra ID App Registration is a separate, pre-existing artefact whose IDs are environment-specific and cannot be derived from infrastructure outputs:
-
-| Setting | Where to find it |
+| `AZURE_AD_CLIENT_ID` set? | Auth behaviour |
 |---|---|
-| `AZURE_AD_TENANT_ID` | Azure Portal → Entra ID → Overview → Tenant ID |
-| `AZURE_AD_CLIENT_ID` | Azure Portal → Entra ID → App registrations → your API app → Application (client) ID |
-| `NODE_ENV` | Set to `production` — this is the switch that activates enforcement |
+| Yes (via `azd env set`) | `NODE_ENV=production` + Entra ID values injected by Bicep → all business endpoints enforce Bearer JWT |
+| No (blank / default) | API runs without auth enforcement — all endpoints open (suitable for initial setup / pre-registration) |
 
-**Sequence — complete these steps in order:**
+In local development (`NODE_ENV=development` or `test`): auth is always bypassed regardless of env vars.
 
-1. **Wire MSAL into the React frontend** (Phase 2) so it acquires an Entra ID token and attaches it as `Authorization: Bearer <token>` on every API request. Skipping this step means all frontend API calls return 401 the moment enforcement is enabled.
-2. **Register an Entra ID App Registration** for the API (or reuse an existing one) and note its Tenant ID and Application (client) ID.
-3. **Activate enforcement** — set all three values together (the API restarts automatically):
+### Entra ID App Registration values
 
-**Bash (Linux/macOS/WSL):**
+Three app settings flow from your Entra ID registrations into the deployment:
+
+| Setting | Where to find it | Used by |
+|---|---|---|
+| `AZURE_AD_CLIENT_ID` | Azure Portal → App registrations → **API app** → Application (client) ID | API Bearer JWT validation |
+| `AZURE_AD_TENANT_ID` | Derived from `tenant().tenantId` at provision time (no manual input needed) | API JWT issuer check |
+| `VITE_AZURE_CLIENT_ID` (`VITE_SPA_CLIENT_ID` env var) | Azure Portal → App registrations → **SPA app** → Application (client) ID | Frontend MSAL token acquisition |
+| `VITE_AZURE_API_SCOPE` (`VITE_API_SCOPE` env var) | Azure Portal → App registrations → **API app** → Expose an API → full scope URI | Frontend token scope request |
+
+### Enabling production auth (new environment)
+
+Complete these steps **before** running `azd up` or `azd provision`:
+
+1. **Create two Entra ID App Registrations** (or reuse existing ones):
+   - **API app**: no redirect URI needed; under "Expose an API" add scope `access_as_user` — note the full URI (`api://<api-client-id>/access_as_user`)
+   - **SPA app**: add `https://<your-web-app>.azurewebsites.net` as a redirect URI (and `http://localhost:5173` for local dev); under "API permissions" grant delegated access to the API app scope above
+   - Ensure admin consent is granted for the API permission in your tenant
+
+2. **Set values in the azd environment:**
+   ```bash
+   azd env set AZURE_AD_CLIENT_ID <api-app-registration-client-id>
+   azd env set VITE_SPA_CLIENT_ID  <spa-app-registration-client-id>
+   azd env set VITE_API_SCOPE      api://<api-app-registration-client-id>/access_as_user
+   ```
+
+3. **Provision and deploy** — Bicep reads these values and sets `NODE_ENV=production` + `AZURE_AD_TENANT_ID` + `AZURE_AD_CLIENT_ID` on the API App Service; the `azure.yaml` prepackage hook bakes `VITE_AZURE_*` vars into the web bundle:
+   ```bash
+   azd up
+   ```
+
+### Activating auth on an existing deployment (without re-provisioning)
+
+If you already have a deployed environment and want to enable auth without a full `azd provision`, set the values in the azd environment and re-provision:
+
 ```bash
-API_APP=$(azd env get-values | grep '^SERVICE_API_NAME=' | cut -d'=' -f2- | tr -d '"')
-RG=$(azd env get-values | grep '^AZURE_RESOURCE_GROUP=' | cut -d'=' -f2- | tr -d '"')
-
-az webapp config appsettings set \
-  --name "$API_APP" --resource-group "$RG" \
-  --settings \
-    AZURE_AD_TENANT_ID=<tenant-guid> \
-    AZURE_AD_CLIENT_ID=<api-app-registration-client-id> \
-    NODE_ENV=production
+azd env set AZURE_AD_CLIENT_ID <api-app-registration-client-id>
+azd env set VITE_SPA_CLIENT_ID  <spa-app-registration-client-id>
+azd env set VITE_API_SCOPE      api://<api-app-registration-client-id>/access_as_user
+azd provision   # updates App Service settings; API restarts automatically
+azd deploy      # rebuilds web bundle with MSAL env vars baked in
 ```
 
-**Windows (PowerShell):**
-```powershell
-$API_APP = (azd env get-values | Select-String '^SERVICE_API_NAME=').Line -replace '^SERVICE_API_NAME=|"', ''
-$RG      = (azd env get-values | Select-String '^AZURE_RESOURCE_GROUP=').Line -replace '^AZURE_RESOURCE_GROUP=|"', ''
+### Diagnosing 401 errors
 
-az webapp config appsettings set `
-  --name $API_APP --resource-group $RG `
-  --settings `
-    AZURE_AD_TENANT_ID=<tenant-guid> `
-    AZURE_AD_CLIENT_ID=<api-app-registration-client-id>
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Every API call from the browser returns 401 | Auth enabled on API but MSAL not sending token | Check browser console for MSAL errors; confirm `VITE_AZURE_CLIENT_ID` and `VITE_AZURE_API_SCOPE` are non-empty in the deployed bundle |
+| 401 with `Token audience does not match` in API logs | `VITE_AZURE_API_SCOPE` points to wrong client ID | Ensure the scope URI uses the **API** app registration client ID, not the SPA one |
+| 401 with `Unexpected issuer` in API logs | Token from wrong tenant | Confirm `AZURE_AD_TENANT_ID` on the App Service matches the tenant where the SPA user signed in |
+| 401 with `Token expired` in API logs | Stale token in client cache | Reload the browser tab to trigger a silent token refresh |
+| 401 on `/health` | Not expected — health endpoint is always open | Check API process is running (`az webapp log tail`) |
+| API refuses to start, logs show `Startup aborted` | `AZURE_AD_CLIENT_ID` set but blank or malformed | Re-run `azd provision` with a valid client ID, or remove `AZURE_AD_CLIENT_ID` to disable enforcement |
+| `Auth: enforcement disabled — all requests allowed` in logs | `AZURE_AD_CLIENT_ID` not set or blank | Expected when auth is not yet configured; set via `azd env set` and re-provision |
+
+### Verifying auth state safely
+
+Check which mode the API is running in without making authenticated calls:
+
+```bash
+# Health endpoint is always open and reports the NODE_ENV
+curl -s https://<api-url>/health | jq .
+# → {"status":"ok","env":"production"} when auth is active
+# → {"status":"ok","env":"development"} or "undefined" when auth is bypassed
+
+# API log stream (requires filesystem logging — see Troubleshooting)
+az webapp log tail --name <api-app-name> --resource-group <resource-group>
+# Look for one of:
+#   "Auth: Azure Entra ID JWT enforcement enabled (tenant=...)" → enforced
+#   "Auth: enforcement disabled — all requests allowed" → bypassed
 ```
-
-Once `NODE_ENV=production` is set alongside these values, the API will refuse to start if either is missing — the App Service log stream will show a `Startup aborted — required configuration is missing or invalid` message naming the missing variable.
-
-**In local development** (`NODE_ENV=development` or `test`): auth is bypassed automatically with a startup warning. No Azure AD credentials are needed locally.
-
-**In the current deployed environment**: auth is also bypassed (see above). The `/health` endpoint is always open regardless.
 
 ## App Service Plan SKU and Cost
 
@@ -469,9 +489,9 @@ Invoke-RestMethod https://<api-url>/health | ConvertTo-Json
 | `[employees] GET /employees 500 – …` | 5xx from a CRUD route — error message included |
 | `[dashboard] GET /dashboard?date=… 500 – …` | Dashboard aggregation failure |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING is not set` warn | Telemetry disabled — check App Service app settings |
-| `Auth: Azure Entra ID JWT enforcement enabled (tenant=…)` | Auth middleware active in production |
-| `Auth: enforcement disabled — all requests allowed…` | Auth bypassed — expected in dev/test and in the current deployed environment (NODE_ENV not set to production); unexpected only after production auth hardening is enabled |
-| `Auth: token rejected – …` | 401 issued; message explains why (expired, bad aud, etc.) |
+| `Auth: Azure Entra ID JWT enforcement enabled (tenant=…)` | Auth active — `AZURE_AD_CLIENT_ID` was set at provision time |
+| `Auth: enforcement disabled — all requests allowed…` | Auth bypassed — `AZURE_AD_CLIENT_ID` was blank at provision time; expected during initial setup before Entra ID registration |
+| `Auth: token rejected – …` | 401 issued; message explains why (expired, bad aud, wrong issuer, etc.) |
 
 ---
 

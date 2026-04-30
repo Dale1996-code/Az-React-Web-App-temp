@@ -27,6 +27,9 @@ services:
           run: |
             echo "VITE_API_BASE_URL=""$env:API_BASE_URL""" > .env.local
             echo "VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=""$env:APPLICATIONINSIGHTS_CONNECTION_STRING""" >> .env.local
+            echo "VITE_AZURE_TENANT_ID=""$env:VITE_AZURE_TENANT_ID""" >> .env.local
+            echo "VITE_AZURE_CLIENT_ID=""$env:VITE_AZURE_CLIENT_ID""" >> .env.local
+            echo "VITE_AZURE_API_SCOPE=""$env:VITE_AZURE_API_SCOPE""" >> .env.local
             npm ci
             npm run build
         posix:
@@ -34,6 +37,9 @@ services:
           run: |
             echo VITE_API_BASE_URL=\"$API_BASE_URL\" > .env.local
             echo VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=\"$APPLICATIONINSIGHTS_CONNECTION_STRING\" >> .env.local
+            echo VITE_AZURE_TENANT_ID=\"$VITE_AZURE_TENANT_ID\" >> .env.local
+            echo VITE_AZURE_CLIENT_ID=\"$VITE_AZURE_CLIENT_ID\" >> .env.local
+            echo VITE_AZURE_API_SCOPE=\"$VITE_AZURE_API_SCOPE\" >> .env.local
             npm ci
             npm run build
       postdeploy:

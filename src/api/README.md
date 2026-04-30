@@ -51,19 +51,14 @@ A warning is logged at startup — no credentials required locally.
 Entra ID Bearer JWT in the `Authorization: Bearer <token>` header. The API validates
 the signature against the tenant JWKS endpoint and checks issuer, audience, and expiry.
 
-To enable in production, add both values to the App Service configuration:
-
-```
-AZURE_AD_TENANT_ID=<your-tenant-id>
-AZURE_AD_CLIENT_ID=<api-app-registration-client-id>
-```
+`NODE_ENV=production` is set automatically by Bicep when `AZURE_AD_CLIENT_ID` is
+provided at provision time (`azd env set AZURE_AD_CLIENT_ID <guid>` before `azd provision`).
+`AZURE_AD_TENANT_ID` is derived from `tenant().tenantId` — no manual input needed.
 
 The `/health` endpoint is always unauthenticated (used by Azure deployment probes).
 
-> **Frontend integration note**: The React SPA will need to acquire an Entra ID token
-> (e.g., via MSAL) and attach it to API requests. This is a Phase 2 frontend task.
-> Until MSAL is wired into the frontend, the API should only be called from trusted
-> server-side contexts in production.
+The React SPA acquires Entra ID tokens via MSAL and attaches them as Bearer tokens.
+See the top-level `README.md#authentication` for the full setup walkthrough.
 
 ## Endpoints
 
