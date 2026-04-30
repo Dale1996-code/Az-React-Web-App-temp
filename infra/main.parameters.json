@@ -19,6 +19,9 @@
     },
     "appServicePlanSkuName": {
       "value": "${APP_SERVICE_PLAN_SKU_NAME=F1}"
+    },
+    "alertEmail": {
+      "value": "${ALERT_EMAIL=}"
     }
   }
 }

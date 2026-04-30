@@ -37,6 +37,9 @@ param principalId string = ''
 @allowed(['F1', 'B1', 'B2', 'B3', 'S1', 'S2', 'S3', 'P1v3', 'P2v3', 'P3v3'])
 param appServicePlanSkuName string = 'F1'
 
+@description('Optional email address to receive alert notifications (5xx spike, health check failure). Leave empty to suppress email — alerts still fire in Azure Monitor. Only applied when appServicePlanSkuName is B1 or above.')
+param alertEmail string = ''
+
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
@@ -208,6 +211,19 @@ module monitoring 'br/public:avm/ptn/azd/monitoring:0.1.0' = {
     tags: tags
   }
 }
+// Minimal alerting baseline — Http5xx spike and health check failure.
+// Skipped on Free tier because HealthCheckStatus metric requires Basic or above.
+module alerts './app/alerts.bicep' = if (!isFreeTier) {
+  name: 'alerts'
+  scope: rg
+  params: {
+    apiAppServiceResourceId: '${rg.id}/providers/Microsoft.Web/sites/${api.outputs.SERVICE_API_NAME}'
+    location: location
+    tags: tags
+    alertEmail: alertEmail
+  }
+}
+
 // Creates Azure API Management (APIM) service to mediate the requests between the frontend and the backend API
 module apim 'br/public:avm/res/api-management/service:0.2.0' = if (useAPIM) {
   name: 'apim-deployment'

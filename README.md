@@ -30,6 +30,10 @@ All resources are provisioned inside a single [resource group](https://docs.micr
 - [Azure Developer CLI](https://aka.ms/azd-install)
 - [Node.js 22 LTS with npm](https://nodejs.org/) — Node 20 reached end of life March 2026; Azure App Service targets `node|22-lts`
 
+## Operations
+
+For a concise operations reference (KQL queries, alert response playbook, app settings table, manual monitoring setup), see **[RUNBOOK.md](RUNBOOK.md)**.
+
 ## Preflight check
 
 Run this before `azd deploy` (or any `azd up`) to verify the repo is in a
@@ -90,6 +94,10 @@ Before running `azd up` for the first time, confirm the following:
 2. `azd up` — prompts for environment name, subscription, and region, then provisions infrastructure and deploys both services
    - Pick a region where B1 Linux App Service and Cosmos DB serverless are available (East US, West Europe, and North Europe are reliable choices)
    - First provision takes 5–10 minutes; subsequent `azd deploy` runs are ~2 minutes
+   - To receive email alerts on 5xx spikes and health check failures (B1+), set `alertEmail` before provisioning:
+     ```bash
+     azd env set ALERT_EMAIL you@example.com
+     ```
 3. **Optional pre-readiness step — store Entra ID values now for later hardening.** `AZURE_AD_TENANT_ID`, `AZURE_AD_CLIENT_ID`, and `NODE_ENV=production` are **not** provisioned by Bicep and are **not required for the current internal MVP** — the deployed API runs with auth enforcement bypassed and all endpoints are open. You can pre-populate the Entra ID values now if you want the environment staged for Phase 2 hardening, but **do not set `NODE_ENV=production` until MSAL is wired into the frontend** — doing so will return 401 on every frontend API call and make the app non-functional:
 
    **Bash (Linux/macOS/WSL):**
@@ -352,25 +360,24 @@ Once `NODE_ENV=production` is set alongside these values, the API will refuse to
 
 ## App Service Plan SKU and Cost
 
-Both App Services (web and API) share a single Linux App Service Plan. The default SKU is **B1** (Basic, 1 vCPU, 1.75 GB RAM), which is the cheapest tier that supports the features this app requires:
+Both App Services (web and API) share a single Linux App Service Plan. The default SKU is **F1** (Free), which lets the template deploy on quota-constrained subscriptions. The recommended minimum for production is **B1** (Basic, 1 vCPU, 1.75 GB RAM).
 
-| Feature | Required by | Supported from |
-|---|---|---|
-| `alwaysOn` | API + Web site config | Basic (B1) |
-| Linux (`reserved: true`) | Node.js runtime | Basic (B1) |
-| Two sites on one plan | Shared plan | Basic (B1) |
+| SKU | `alwaysOn` | Health check | Alerting | Recommended for |
+|---|---|---|---|---|
+| F1 (Free) | No | No | No | Initial setup / demos |
+| B1+ (Basic or above) | Yes | Yes (`/health`) | Yes (metric alerts) | Production |
 
-**Free (F1) and Shared (D1) tiers are not supported.** Both apps have `alwaysOn: true` in their site config, which is unavailable below Basic tier; a deployment to F1/D1 will either fail or silently disable always-on, causing cold-start timeouts.
+When F1 is used, `alwaysOn` and `healthCheckPath` are automatically disabled by the Bicep template — the app will still deploy and run, but instances may cold-start after idle periods.
 
 ### Approximate monthly cost (B1, East US, 2026)
 
-| Resource | Est. cost |
-|---|---|
-| App Service Plan B1 (Linux) | ~$13/mo |
-| Cosmos DB (serverless, ~0 traffic) | ~$0–2/mo |
-| Key Vault (standard) | ~$0–1/mo |
-| Application Insights + Log Analytics | ~$0–3/mo |
-| **Total dev estimate** | **~$15–20/mo** |
+| Resource | F1 (Free) | B1 (Basic) |
+|---|---|---|
+| App Service Plan (Linux) | $0/mo | ~$13/mo |
+| Cosmos DB (serverless, ~0 traffic) | ~$0–2/mo | ~$0–2/mo |
+| Key Vault (standard) | ~$0–1/mo | ~$0–1/mo |
+| Application Insights + Log Analytics | ~$0–3/mo | ~$0–3/mo |
+| **Total estimate** | **~$0–6/mo** | **~$15–20/mo** |
 
 ### Overriding the SKU for production
 
