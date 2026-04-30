@@ -40,6 +40,15 @@ param appServicePlanSkuName string = 'F1'
 @description('Optional email address to receive alert notifications (5xx spike, health check failure). Leave empty to suppress email — alerts still fire in Azure Monitor. Only applied when appServicePlanSkuName is B1 or above.')
 param alertEmail string = ''
 
+@description('Application (client) ID of the Entra ID App Registration that represents the API. Required to enforce Bearer JWT auth in production (NODE_ENV=production). Leave blank to deploy without auth enforcement (not recommended for production). See README.md#authentication.')
+param azureAdClientId string = ''
+
+@description('Application (client) ID of the Entra ID App Registration that represents the SPA. Used to inject VITE_AZURE_CLIENT_ID into the web build. Leave blank to deploy without frontend authentication.')
+param viteSpaClientId string = ''
+
+@description('Full API scope URI exposed by the API App Registration (e.g. api://<api-client-id>/access_as_user). Used to inject VITE_AZURE_API_SCOPE into the web build.')
+param viteApiScope string = ''
+
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
@@ -99,19 +108,25 @@ module api './app/api-appservice-avm.bicep' = {
       },
       isFreeTier ? {} : { healthCheckPath: '/health' }
     )
-    appSettings: {
-      AZURE_KEY_VAULT_ENDPOINT: keyVault.outputs.uri
-      AZURE_COSMOS_DATABASE_NAME: cosmos.outputs.databaseName
-      AZURE_COSMOS_ENDPOINT: cosmos.outputs.endpoint
-      API_ALLOW_ORIGINS: web.outputs.SERVICE_WEB_URI
-      SCM_DO_BUILD_DURING_DEPLOYMENT: false
-      // NODE_ENV, AZURE_AD_TENANT_ID, and AZURE_AD_CLIENT_ID are intentionally
-      // absent here. Auth enforcement is bypassed in the MVP phase because the
-      // React frontend does not yet have MSAL integrated (Phase 2 prerequisite).
-      // Setting NODE_ENV=production before MSAL is wired will return 401 on
-      // every frontend API call. See README.md#authentication for the full
-      // production hardening checklist and the correct sequencing.
-    }
+    appSettings: union(
+      {
+        AZURE_KEY_VAULT_ENDPOINT: keyVault.outputs.uri
+        AZURE_COSMOS_DATABASE_NAME: cosmos.outputs.databaseName
+        AZURE_COSMOS_ENDPOINT: cosmos.outputs.endpoint
+        API_ALLOW_ORIGINS: web.outputs.SERVICE_WEB_URI
+        SCM_DO_BUILD_DURING_DEPLOYMENT: false
+      },
+      // Auth enforcement: set NODE_ENV=production + Entra ID values when the API
+      // App Registration has been configured. When azureAdClientId is blank, the
+      // API runs without auth enforcement (development / pre-registration state).
+      // Set AZURE_AD_CLIENT_ID via `azd env set AZURE_AD_CLIENT_ID <guid>` before
+      // running `azd provision` to activate enforcement. See README.md#authentication.
+      !empty(azureAdClientId) ? {
+        NODE_ENV: 'production'
+        AZURE_AD_TENANT_ID: tenant().tenantId
+        AZURE_AD_CLIENT_ID: azureAdClientId
+      } : {}
+    )
     appInsightResourceId: monitoring.outputs.applicationInsightsResourceId
     allowedOrigins: [ web.outputs.SERVICE_WEB_URI ]
   }
@@ -285,8 +300,14 @@ output REACT_APP_WEB_BASE_URL string = web.outputs.SERVICE_WEB_URI
 output USE_APIM bool = useAPIM
 output SERVICE_API_ENDPOINTS array = useAPIM ? [ apimApi.outputs.serviceApiUri, api.outputs.SERVICE_API_URI ]: []
 
-// Surfaced so the post-provision Entra ID app-settings step in README.md
-// (`az webapp config appsettings set --name $SERVICE_API_NAME ...`) is
-// copy-pasteable without portal lookups.
+// Surfaced for the azd prepackage hook in azure.yaml so Vite bakes auth config
+// into the web bundle at build time. These are empty strings when the Entra ID
+// App Registrations have not been configured (auth disabled in the web build).
+output VITE_AZURE_TENANT_ID string = tenant().tenantId
+output VITE_AZURE_CLIENT_ID string = viteSpaClientId
+output VITE_AZURE_API_SCOPE string = viteApiScope
+
+// Surfaced so the Entra ID app-settings step in README.md is copy-pasteable
+// without portal lookups.
 output SERVICE_API_NAME string = api.outputs.SERVICE_API_NAME
 output AZURE_RESOURCE_GROUP string = rg.name

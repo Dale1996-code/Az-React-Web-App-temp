@@ -110,7 +110,7 @@ VITE_AZURE_TENANT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 VITE_AZURE_API_SCOPE=api://<api-client-id>/access_as_user
 ```
 
-For `azd` deployments, add these as outputs in `infra/main.bicep` and extend the `prepackage` hook in `azure.yaml` to write them into `.env.local` alongside the existing vars.
+For `azd` deployments, `VITE_AZURE_TENANT_ID`, `VITE_AZURE_CLIENT_ID`, and `VITE_AZURE_API_SCOPE` are now Bicep outputs wired through to the `azure.yaml` prepackage hook automatically — set `VITE_SPA_CLIENT_ID` and `VITE_API_SCOPE` via `azd env set` before provisioning.
 
 ### Local development notes
 
@@ -119,13 +119,22 @@ For `azd` deployments, add these as outputs in `infra/main.bicep` and extend the
 - Token storage uses `sessionStorage` (cleared when the tab closes). Change `cacheLocation` in `authService.ts` to `'localStorage'` if persistent sessions across tabs are needed.
 - `acquireTokenSilent` is attempted first on every request; it only hits the network if the cached token is near expiry. If interaction is required (e.g. consent), it logs a warning and the request proceeds without a token — the user must navigate to trigger a fresh login via the header "Sign in" button.
 
-### What remains before enforcing production auth
+### Production auth enforcement — current state (complete)
 
-1. **API middleware** — uncomment / enable the bearer-token validation middleware in `src/api/src/app.ts` (or wherever the auth guard lives).
-2. **App registration for the API** — the API App Service needs its own registration with the scope exposed, and the SPA registration needs API permission granted for that scope.
-3. **azd infra** — pipe `VITE_AZURE_CLIENT_ID`, `VITE_AZURE_TENANT_ID`, and `VITE_AZURE_API_SCOPE` through Bicep outputs → `azure.yaml` prepackage hook so they are set at build time in CI/CD.
-4. **Token audience validation** — the API middleware must validate `iss`, `aud`, and `appid`/`azp` claims to match the expected app registration.
-5. **Consent** — ensure admin consent is granted for the API scope in the tenant, or that user consent is allowed by tenant policy.
+All infrastructure and application code is wired for production auth enforcement:
+
+1. **API middleware** ✅ — `createAuthMiddleware` in `src/api/src/middleware/auth.ts` validates RS256 Bearer JWTs; enforced when `NODE_ENV=production`.
+2. **Bicep** ✅ — `infra/main.bicep` sets `NODE_ENV=production` + `AZURE_AD_TENANT_ID` + `AZURE_AD_CLIENT_ID` on the API App Service when `AZURE_AD_CLIENT_ID` parameter is non-empty.
+3. **azd parameters** ✅ — `infra/main.parameters.json` binds `AZURE_AD_CLIENT_ID`, `VITE_SPA_CLIENT_ID`, `VITE_API_SCOPE` from `azd env` values.
+4. **Web build** ✅ — Bicep outputs `VITE_AZURE_TENANT_ID`, `VITE_AZURE_CLIENT_ID`, `VITE_AZURE_API_SCOPE`; `azure.yaml` prepackage hook bakes them into the web bundle.
+5. **Token validation** ✅ — `validateToken()` checks `iss`, `aud`, `exp`, `nbf`, and RS256 signature against live Entra ID JWKS.
+
+**Remaining manual steps** (cannot be automated — require Azure Portal access):
+- Create Entra ID App Registrations for the API and SPA
+- Expose `access_as_user` scope on the API app registration
+- Grant the SPA app delegated permission to call the API scope
+- Ensure admin consent is granted in the tenant
+- Set `azd env set AZURE_AD_CLIENT_ID`, `VITE_SPA_CLIENT_ID`, `VITE_API_SCOPE` then run `azd provision`
 
 ## Infra + CI
 

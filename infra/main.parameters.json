@@ -22,6 +22,15 @@
     },
     "alertEmail": {
       "value": "${ALERT_EMAIL=}"
+    },
+    "azureAdClientId": {
+      "value": "${AZURE_AD_CLIENT_ID=}"
+    },
+    "viteSpaClientId": {
+      "value": "${VITE_SPA_CLIENT_ID=}"
+    },
+    "viteApiScope": {
+      "value": "${VITE_API_SCOPE=}"
     }
   }
 }
