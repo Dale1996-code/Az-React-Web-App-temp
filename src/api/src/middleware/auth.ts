@@ -1,5 +1,6 @@
 import https from "https";
-import { createPublicKey, createVerify, JsonWebKey } from "crypto";
+import { createPublicKey, createVerify } from "crypto";
+import type { webcrypto } from "crypto";
 import { Request, Response, NextFunction, RequestHandler } from "express";
 import { logger } from "../config/observability";
 import { AuthConfig } from "../config/appConfig";
@@ -123,7 +124,7 @@ function validateSignature(
 ): void {
     const publicKey = createPublicKey({
         format: "jwk",
-        key: { kty: jwk.kty, n: jwk.n, e: jwk.e } as JsonWebKey,
+        key: { kty: jwk.kty, n: jwk.n, e: jwk.e } as webcrypto.JsonWebKey,
     });
     const verifier = createVerify("RSA-SHA256");
     verifier.update(`${headerB64}.${payloadB64}`);

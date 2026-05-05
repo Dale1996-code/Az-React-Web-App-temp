@@ -56,10 +56,7 @@ services:
       prepackage:
         windows:
           shell: pwsh
-          run: |
-            npm ci
-            npm run build
-            npm prune --omit=dev
+          run: 'npm ci --include=dev && npm run build && npm prune --omit=dev'
         posix:
           shell: sh
-          run: 'npm ci && npm run build && npm prune --omit=dev'
+          run: 'npm ci --include=dev && npm run build && npm prune --omit=dev'

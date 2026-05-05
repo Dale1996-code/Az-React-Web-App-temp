@@ -6,7 +6,6 @@
   "scripts": {
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
-    "prebuild": "npm run lint",
     "build": "tsc -b .",
     "start": "node .",
     "test": "jest --coverage --forceExit"
@@ -29,6 +28,12 @@
     "@azure/cosmos": "^4.4.1",
     "@azure/identity": "^4.2.1",
     "@azure/keyvault-secrets": "^4.7.0",
+    "@types/config": "^0.0.41",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^4.17.25",
+    "@types/node": "^25.6.0",
+    "@types/swagger-ui-express": "^4.1.8",
+    "@types/yamljs": "^0.2.34",
     "applicationinsights": "^2.5.1",
     "config": "^3.3.12",
     "cors": "^2.8.5",
@@ -36,6 +41,7 @@
     "express": "^4.21.2",
     "swagger-jsdoc": "^6.2.1",
     "swagger-ui-express": "^4.4.0",
+    "typescript": "^5.9.3",
     "uuid": "^11.1.0",
     "winston": "^3.7.2",
     "winston-transport": "^4.5.0",
@@ -44,20 +50,14 @@
   "devDependencies": {
     "@babel/preset-env": "^7.24.0",
     "@babel/preset-typescript": "^7.24.0",
-    "@types/config": "^0.0.41",
-    "@types/cors": "^2.8.12",
-    "@types/express": "^4.17.21",
     "@types/jest": "^29.5.14",
     "@types/supertest": "^7.2.0",
     "@types/swagger-jsdoc": "^6.0.4",
-    "@types/swagger-ui-express": "^4.1.8",
-    "@types/yamljs": "^0.2.34",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
     "eslint": "^8.57.1",
     "jest": "^29.7.0",
     "supertest": "^7.0.0",
-    "ts-jest": "^29.2.0",
-    "typescript": "^5.7.3"
+    "ts-jest": "^29.2.0"
   }
 }

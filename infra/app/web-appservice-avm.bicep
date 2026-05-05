@@ -6,6 +6,7 @@ param appCommandLine string = 'pm2 serve /home/site/wwwroot --no-daemon --spa'
 param appInsightResourceId string
 param appServicePlanId string
 param linuxFxVersion string
+param alwaysOn bool = true
 param kind string = 'app,linux'
 
 module web 'br/public:avm/res/web/site:0.6.0' = {
@@ -20,7 +21,7 @@ module web 'br/public:avm/res/web/site:0.6.0' = {
     siteConfig: {
       appCommandLine: appCommandLine
       linuxFxVersion: linuxFxVersion
-      alwaysOn: true
+      alwaysOn: alwaysOn
     }
     logsConfiguration: {
       applicationLogs: { fileSystem: { level: 'Verbose' } }
