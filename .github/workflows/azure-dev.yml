@@ -1,4 +1,23 @@
-# PRIMARY CI/CD PIPELINE — use this path by default.
+# =============================================================================
+# RETAINED FOR EMERGENCY ROLLBACK ONLY — Azure deployment is no longer the
+# primary path.
+#
+# As of Phase 2 of the GCP migration, the canonical deployment workflow is
+# .github/workflows/gcp-deploy.yml (Google Cloud Run). This Azure workflow is
+# kept in the repository so that, if a serious problem is discovered with the
+# Cloud Run deployment, an operator can manually re-deploy to Azure App Service
+# to restore service.
+#
+# Push triggers have been REMOVED. This workflow now only runs on manual
+# dispatch (Actions tab → "Deploy to Azure" → Run workflow). Do not re-enable
+# push triggers without coordinating with whoever is running the migration.
+#
+# Once the Cloud Run deployment has been stable in production for long enough
+# to retire the rollback path, this file (along with infra/, azure.yaml, and
+# .azdo/) can be deleted in a follow-up phase.
+# =============================================================================
+#
+# Original notes (still accurate when this workflow is run manually):
 #
 # This workflow is the canonical deployment path for this repository.
 # The Azure DevOps pipeline at .azdo/pipelines/azure-dev.yml is a secondary
@@ -27,13 +46,10 @@
 #   7. Upload Playwright report         ← ADO SKIPS
 
 on:
+  # Manual dispatch only — push triggers were removed during the GCP migration
+  # so that merges to main do not accidentally redeploy to Azure. Re-enable the
+  # push trigger only if you have decided to roll back from Cloud Run.
   workflow_dispatch:
-  push:
-    # Run when commits are pushed to mainline branch (main or master)
-    # Set this to the mainline branch you are using
-    branches:
-      - main
-      - master
 
 # GitHub Actions workflow to deploy to Azure using azd
 # To configure required secrets for connecting to Azure, simply run `azd pipeline config`

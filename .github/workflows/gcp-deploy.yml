@@ -1,0 +1,292 @@
+# Google Cloud Run deployment — Phase 2 of the Azure → GCP migration.
+#
+# This workflow builds Docker images for the API and web services, pushes them
+# to Google Artifact Registry, deploys both services to Cloud Run, and runs
+# Playwright smoke tests against the deployed URLs.
+#
+# Authentication uses Workload Identity Federation (no JSON key files).
+# All configuration values come from GitHub Actions repository variables and
+# secrets — no real project IDs, URLs, or credentials are hardcoded here.
+#
+# See docs/gcp-deployment.md for the full setup guide, including the list of
+# required GitHub variables/secrets and the manual GCP console steps.
+#
+# IMPORTANT: This workflow assumes the database is still Azure Cosmos DB and
+# that authentication is still Entra ID / MSAL. Those migrations happen in
+# later phases.
+
+name: Deploy to Google Cloud Run
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  # Required to mint a federated OIDC token for google-github-actions/auth.
+  id-token: write
+  contents: read
+
+# Cancel in-flight runs for the same ref so we never deploy two builds at once.
+concurrency:
+  group: gcp-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      # Repository-level variables (Settings → Secrets and variables → Actions → Variables).
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ vars.GCP_REGION }}
+      GCP_ARTIFACT_REPO: ${{ vars.GCP_ARTIFACT_REPO }}
+      API_SERVICE_NAME: ${{ vars.GCP_API_SERVICE_NAME }}
+      WEB_SERVICE_NAME: ${{ vars.GCP_WEB_SERVICE_NAME }}
+      # Cosmos DB key is loaded from Secret Manager. Default secret name is
+      # `cosmos-db-key`; override with the GCP_COSMOS_KEY_SECRET variable if you
+      # named the secret differently.
+      GCP_COSMOS_KEY_SECRET: ${{ vars.GCP_COSMOS_KEY_SECRET || 'cosmos-db-key' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required configuration
+        # Fail fast (with a clear message) if a required variable or secret is
+        # missing. Listed values are referenced as env vars so the shell can
+        # check them — GitHub still masks the secret values in logs.
+        env:
+          WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+        run: |
+          missing=0
+          check() {
+            local name="$1"
+            local value="$2"
+            if [ -z "$value" ]; then
+              echo "::error::Missing required configuration: $name"
+              missing=1
+            fi
+          }
+          check GCP_PROJECT_ID "$GCP_PROJECT_ID"
+          check GCP_REGION "$GCP_REGION"
+          check GCP_ARTIFACT_REPO "$GCP_ARTIFACT_REPO"
+          check GCP_API_SERVICE_NAME "$API_SERVICE_NAME"
+          check GCP_WEB_SERVICE_NAME "$WEB_SERVICE_NAME"
+          check GCP_WORKLOAD_IDENTITY_PROVIDER "$WORKLOAD_IDENTITY_PROVIDER"
+          check GCP_SERVICE_ACCOUNT "$SERVICE_ACCOUNT"
+          if [ "$missing" -ne 0 ]; then
+            echo "::error::See docs/gcp-deployment.md for the full list of required GitHub variables and secrets."
+            exit 1
+          fi
+          echo "All required configuration is present."
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Verify OpenAPI spec sync
+        # src/api/openapi.yaml is the source of truth; the root copy is for
+        # tooling discovery and must match exactly.
+        run: |
+          if ! diff src/api/openapi.yaml openapi.yaml > /dev/null 2>&1; then
+            echo "::error::openapi.yaml (root) is out of sync with src/api/openapi.yaml."
+            echo "Fix with: cp src/api/openapi.yaml openapi.yaml && git add openapi.yaml && git commit -m 'chore: sync root openapi.yaml'"
+            diff src/api/openapi.yaml openapi.yaml || true
+            exit 1
+          fi
+
+      - name: Install API dependencies
+        working-directory: src/api
+        run: npm ci
+
+      - name: Run API tests
+        working-directory: src/api
+        run: npm test
+        env:
+          NODE_ENV: test
+
+      - name: Build API (early validation)
+        working-directory: src/api
+        run: npm run build
+
+      - name: Install web dependencies
+        working-directory: src/web
+        run: npm ci
+
+      - name: Build web (early validation)
+        # This validation build does NOT use the deployed API URL — that build
+        # happens later inside the Docker image, where the real URL is baked in.
+        working-directory: src/web
+        run: npm run build
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+
+      - name: Compute image tags
+        id: tags
+        # Tag images with the commit SHA so every deploy is traceable.
+        # `latest` is also tagged for convenience.
+        run: |
+          BASE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GCP_ARTIFACT_REPO}"
+          echo "api_image_sha=${BASE}/api:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "api_image_latest=${BASE}/api:latest" >> "$GITHUB_OUTPUT"
+          echo "web_image_sha=${BASE}/web:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "web_image_latest=${BASE}/web:latest" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push API image
+        run: |
+          docker build \
+            -t "${{ steps.tags.outputs.api_image_sha }}" \
+            -t "${{ steps.tags.outputs.api_image_latest }}" \
+            ./src/api
+          docker push "${{ steps.tags.outputs.api_image_sha }}"
+          docker push "${{ steps.tags.outputs.api_image_latest }}"
+
+      - name: Deploy API to Cloud Run
+        # Cloud Run injects PORT=8080 automatically; the API reads process.env.PORT.
+        # API_ALLOW_ORIGINS is updated later, after the web URL is known.
+        # AZURE_COSMOS_KEY is loaded from Secret Manager — never set inline.
+        run: |
+          gcloud run deploy "${API_SERVICE_NAME}" \
+            --project "${GCP_PROJECT_ID}" \
+            --region "${GCP_REGION}" \
+            --image "${{ steps.tags.outputs.api_image_sha }}" \
+            --platform managed \
+            --allow-unauthenticated \
+            --port 8080 \
+            --quiet \
+            --set-env-vars "NODE_ENV=production" \
+            --set-env-vars "AZURE_COSMOS_ENDPOINT=${{ vars.AZURE_COSMOS_ENDPOINT }}" \
+            --set-env-vars "AZURE_COSMOS_DATABASE_NAME=${{ vars.AZURE_COSMOS_DATABASE_NAME }}" \
+            --set-env-vars "AZURE_AD_TENANT_ID=${{ vars.AZURE_AD_TENANT_ID }}" \
+            --set-env-vars "AZURE_AD_CLIENT_ID=${{ vars.AZURE_AD_CLIENT_ID }}" \
+            --set-secrets "AZURE_COSMOS_KEY=${GCP_COSMOS_KEY_SECRET}:latest"
+
+      - name: Read API service URL
+        id: api-url
+        run: |
+          URL=$(gcloud run services describe "${API_SERVICE_NAME}" \
+            --project "${GCP_PROJECT_ID}" \
+            --region "${GCP_REGION}" \
+            --format='value(status.url)')
+          if [ -z "$URL" ]; then
+            echo "::error::API service URL was empty — Cloud Run describe returned nothing."
+            exit 1
+          fi
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+          echo "API URL: ${URL}"
+
+      - name: Build and push web image
+        # VITE_* values are baked into the static bundle at docker build time.
+        # They become part of the JavaScript shipped to browsers, so we never
+        # pass true secrets here — only public client/tenant IDs.
+        run: |
+          docker build \
+            --build-arg "VITE_API_BASE_URL=${{ steps.api-url.outputs.url }}" \
+            --build-arg "VITE_AZURE_CLIENT_ID=${{ vars.VITE_AZURE_CLIENT_ID }}" \
+            --build-arg "VITE_AZURE_TENANT_ID=${{ vars.VITE_AZURE_TENANT_ID }}" \
+            --build-arg "VITE_AZURE_API_SCOPE=${{ vars.VITE_AZURE_API_SCOPE }}" \
+            -t "${{ steps.tags.outputs.web_image_sha }}" \
+            -t "${{ steps.tags.outputs.web_image_latest }}" \
+            ./src/web
+          docker push "${{ steps.tags.outputs.web_image_sha }}"
+          docker push "${{ steps.tags.outputs.web_image_latest }}"
+
+      - name: Deploy web to Cloud Run
+        # The web container is nginx serving the built SPA. nginx listens on
+        # port 80 inside the container; --port 80 tells Cloud Run to route to
+        # that port instead of the default 8080.
+        run: |
+          gcloud run deploy "${WEB_SERVICE_NAME}" \
+            --project "${GCP_PROJECT_ID}" \
+            --region "${GCP_REGION}" \
+            --image "${{ steps.tags.outputs.web_image_sha }}" \
+            --platform managed \
+            --allow-unauthenticated \
+            --port 80 \
+            --quiet
+
+      - name: Read web service URL
+        id: web-url
+        run: |
+          URL=$(gcloud run services describe "${WEB_SERVICE_NAME}" \
+            --project "${GCP_PROJECT_ID}" \
+            --region "${GCP_REGION}" \
+            --format='value(status.url)')
+          if [ -z "$URL" ]; then
+            echo "::error::Web service URL was empty — Cloud Run describe returned nothing."
+            exit 1
+          fi
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+          echo "Web URL: ${URL}"
+
+      - name: Update API CORS allowlist with web URL
+        # Comma-separate additional origins via the API_ALLOW_ORIGINS_EXTRA
+        # variable if you need to allow a custom domain or another web origin.
+        run: |
+          ORIGINS="${{ steps.web-url.outputs.url }}"
+          EXTRA="${{ vars.API_ALLOW_ORIGINS_EXTRA }}"
+          if [ -n "$EXTRA" ]; then
+            ORIGINS="${ORIGINS},${EXTRA}"
+          fi
+          gcloud run services update "${API_SERVICE_NAME}" \
+            --project "${GCP_PROJECT_ID}" \
+            --region "${GCP_REGION}" \
+            --update-env-vars "API_ALLOW_ORIGINS=${ORIGINS}" \
+            --quiet
+
+      - name: Install Playwright dependencies
+        working-directory: tests
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run smoke tests against deployed Cloud Run URLs
+        # Mirrors the Azure smoke step. The optional SMOKE_AZURE_* secrets
+        # enable the authenticated dashboard check; without them, the auth
+        # case is skipped (non-blocking) and a reason is shown in the report.
+        working-directory: tests
+        env:
+          REACT_APP_WEB_BASE_URL: ${{ steps.web-url.outputs.url }}
+          REACT_APP_API_BASE_URL: ${{ steps.api-url.outputs.url }}
+          CI: "true"
+          SMOKE_AZURE_TENANT_ID: ${{ secrets.SMOKE_AZURE_TENANT_ID }}
+          SMOKE_AZURE_CLIENT_ID: ${{ secrets.SMOKE_AZURE_CLIENT_ID }}
+          SMOKE_AZURE_CLIENT_SECRET: ${{ secrets.SMOKE_AZURE_CLIENT_SECRET }}
+          SMOKE_AZURE_API_SCOPE: ${{ secrets.SMOKE_AZURE_API_SCOPE }}
+        run: npx playwright test
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: tests/playwright-report/
+          retention-days: 7
+
+      - name: Deployment summary
+        if: success()
+        run: |
+          {
+            echo "## Cloud Run deployment"
+            echo ""
+            echo "| Service | URL |"
+            echo "|---|---|"
+            echo "| API | ${{ steps.api-url.outputs.url }} |"
+            echo "| Web | ${{ steps.web-url.outputs.url }} |"
+            echo ""
+            echo "Image tags: \`${GITHUB_SHA}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
