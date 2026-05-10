@@ -32,14 +32,14 @@ const originList = (): string[] | string => {
         return "*";
     }
 
-    const origins = [
-        "https://portal.azure.com",
-        "https://ms.portal.azure.com",
-    ];
+    // Production: only allow origins explicitly listed in API_ALLOW_ORIGINS.
+    // Set API_ALLOW_ORIGINS to a comma-separated list of allowed URLs, e.g.:
+    //   https://web-xxxxx-uc.a.run.app,https://your-custom-domain.com
+    const origins: string[] = [];
 
     if (allowOrigins && allowOrigins !== "") {
         allowOrigins.split(",").forEach(origin => {
-            origins.push(origin);
+            origins.push(origin.trim());
         });
     }
 

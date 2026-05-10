@@ -2,3 +2,7 @@
 **/dist
 **/node_modules
 README.md
+.env
+.env.*
+*.log
+coverage

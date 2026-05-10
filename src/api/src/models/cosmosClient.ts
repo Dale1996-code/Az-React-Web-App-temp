@@ -3,6 +3,19 @@ import { DefaultAzureCredential } from "@azure/identity";
 import { DatabaseConfig } from "../config/appConfig";
 import { logger } from "../config/observability";
 
+// ---------------------------------------------------------------------------
+// Auth selection
+// ---------------------------------------------------------------------------
+// Cloud Run / non-Azure deployments: set AZURE_COSMOS_KEY to the Cosmos DB
+// account primary (or secondary) key. Key auth requires disableLocalAuth=false
+// on the Cosmos account (the default). When AZURE_COSMOS_KEY is present it
+// takes priority over managed-identity credential.
+//
+// Azure / managed-identity deployments: leave AZURE_COSMOS_KEY unset and the
+// code falls back to DefaultAzureCredential (Workload Identity / developer
+// credential), which requires disableLocalAuth=true on the Cosmos account.
+// ---------------------------------------------------------------------------
+
 // Names of all Dales Operations Cosmos DB containers.
 // These must match the container names defined in infra/app/db-avm.bicep.
 export const containerNames = [
@@ -28,14 +41,27 @@ export const configureCosmos = async (config: DatabaseConfig) => {
     }
 
     try {
-        logger.info("Connecting to Cosmos DB using managed identity...");
+        const cosmosKey = process.env.AZURE_COSMOS_KEY;
 
-        const credential = new DefaultAzureCredential();
-
-        cosmosClient = new CosmosClient({
-            endpoint: config.endpoint,
-            aadCredentials: credential,
-        });
+        if (cosmosKey) {
+            // Key-based auth — used for Cloud Run and any non-Azure deployment.
+            // Requires disableLocalAuth=false on the Cosmos DB account.
+            logger.info("Connecting to Cosmos DB using account key (AZURE_COSMOS_KEY)...");
+            cosmosClient = new CosmosClient({
+                endpoint: config.endpoint,
+                key: cosmosKey,
+            });
+        } else {
+            // Managed-identity / DefaultAzureCredential — used for Azure App Service
+            // and Azure-hosted deployments. Requires disableLocalAuth=true on the
+            // Cosmos account and the service principal to have the Data Contributor role.
+            logger.info("Connecting to Cosmos DB using managed identity (DefaultAzureCredential)...");
+            const credential = new DefaultAzureCredential();
+            cosmosClient = new CosmosClient({
+                endpoint: config.endpoint,
+                aadCredentials: credential,
+            });
+        }
 
         database = cosmosClient.database(config.databaseName);
 
