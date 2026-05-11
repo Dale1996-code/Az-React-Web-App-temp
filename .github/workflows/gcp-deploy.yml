@@ -18,11 +18,15 @@
 name: Deploy to Google Cloud Run
 
 on:
+  # Manual-only while GCP setup (Workload Identity Federation, Artifact Registry,
+  # Secret Manager, Cloud Run, and GitHub variables/secrets) is still in progress.
+  # Re-enable the `push` trigger below after the first successful manual Cloud
+  # Run deployment so future merges to main/master deploy automatically.
   workflow_dispatch:
-  push:
-    branches:
-      - main
-      - master
+  # push:
+  #   branches:
+  #     - main
+  #     - master
 
 permissions:
   # Required to mint a federated OIDC token for google-github-actions/auth.
