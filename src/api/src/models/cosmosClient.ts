@@ -17,7 +17,7 @@ import { logger } from "../config/observability";
 // ---------------------------------------------------------------------------
 
 // Names of all Dales Operations Cosmos DB containers.
-// These must match the container names defined in infra/app/db-avm.bicep.
+// These must match the container names that exist in the Cosmos DB account.
 export const containerNames = [
     "employees",
     "tasks",

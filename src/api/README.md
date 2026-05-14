@@ -1,6 +1,6 @@
 # Dales Operations — API
 
-Express + TypeScript REST API backed by Azure Cosmos DB (SQL API with managed identity).
+Express + TypeScript REST API backed by Azure Cosmos DB (SQL API).
 
 ## Prerequisites
 
@@ -17,21 +17,22 @@ cp .env.example .env
 
 On Windows PowerShell: `Copy-Item .env.example .env`
 
-The API authenticates with Cosmos DB using `DefaultAzureCredential`. Run `az login` before starting the server locally so it can pick up your developer credential.
+The API authenticates with Cosmos DB using an account key (`AZURE_COSMOS_KEY`) in the GCP Cloud Run deployment. Set this in `src/api/.env` for local development (copy from `.env.example`).
 
 | Variable | Required | Default | Notes |
 |---|---|---|---|
-| `AZURE_COSMOS_ENDPOINT` | Yes | — | Cosmos DB account URI from Azure Portal |
+| `AZURE_COSMOS_ENDPOINT` | Yes | — | Cosmos DB account URI |
+| `AZURE_COSMOS_KEY` | Yes (local/prod) | — | Cosmos DB primary key; in CI injected from GCP Secret Manager |
 | `AZURE_COSMOS_DATABASE_NAME` | No | `DalesOperations` | Database name |
-| `AZURE_KEY_VAULT_ENDPOINT` | No | — | When set, vault secrets overlay env vars at startup |
+| `AZURE_KEY_VAULT_ENDPOINT` | No | — | Do not set in Cloud Run — Key Vault is not used |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | No | — | API telemetry; skipped when blank |
 | `APPLICATIONINSIGHTS_ROLE_NAME` | No | `API` | Role label in Application Insights |
 | `API_ALLOW_ORIGINS` | No | — | Comma-separated CORS origins; not needed when `NODE_ENV=development` |
 | `PORT` | No | `3100` | HTTP listen port |
 | `AZURE_AD_TENANT_ID` | Prod only | — | Entra ID tenant; required when `NODE_ENV=production` |
-| `AZURE_AD_CLIENT_ID` | Prod only | — | App Registration client ID; required when `NODE_ENV=production` |
+| `AZURE_AD_CLIENT_ID` | Prod only | — | App Registration client ID; activates JWT enforcement |
 
-In Azure all of these are set as App Service environment variables by the Bicep deployment — you do not manage them manually.
+In GCP Cloud Run all of these are set as service environment variables or Secret Manager secrets by the CI workflow — you do not manage them manually in production.
 
 ## Commands
 
@@ -51,11 +52,11 @@ A warning is logged at startup — no credentials required locally.
 Entra ID Bearer JWT in the `Authorization: Bearer <token>` header. The API validates
 the signature against the tenant JWKS endpoint and checks issuer, audience, and expiry.
 
-`NODE_ENV=production` is set automatically by Bicep when `AZURE_AD_CLIENT_ID` is
-provided at provision time (`azd env set AZURE_AD_CLIENT_ID <guid>` before `azd provision`).
-`AZURE_AD_TENANT_ID` is derived from `tenant().tenantId` — no manual input needed.
+`NODE_ENV=production` and the `AZURE_AD_*` variables are set on the Cloud Run API service
+by the CI workflow. Set them as GitHub repository variables before the next deploy.
+See [README.md#authentication](../../README.md#authentication) for the full setup.
 
-The `/health` endpoint is always unauthenticated (used by Azure deployment probes).
+The `/health` endpoint is always unauthenticated (used by Cloud Run health probes).
 
 The React SPA acquires Entra ID tokens via MSAL and attaches them as Bearer tokens.
 See the top-level `README.md#authentication` for the full setup walkthrough.
@@ -100,5 +101,5 @@ Each collection also accepts collection-specific filters that are pushed server-
 
 **Tradeoffs:**
 - Cosmos SQL `OFFSET N LIMIT M` pagination is not keyset-based; deep offsets (large skip values) still scan the skipped rows on the server. For the current data volumes this is acceptable; switch to continuation tokens if pages grow very large.
-- `ORDER BY` on a field not covered by a composite index will trigger a full-partition scan in Cosmos. Add composite indexes to `infra/app/db-avm.bicep` as query patterns are confirmed.
+- `ORDER BY` on a field not covered by a composite index will trigger a full-partition scan in Cosmos. Add composite indexes on the Cosmos account (Azure Portal → Cosmos DB → Data Explorer → container Settings → Indexing Policy) as query patterns are confirmed.
 - The dashboard `followUpDate <= date` condition requires `followUpDate` to be indexed. Cosmos indexes all paths by default, so this works out of the box.

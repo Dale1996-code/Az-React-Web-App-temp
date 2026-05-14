@@ -19,33 +19,13 @@ the **lowest possible blast radius**, keeping all existing behaviour intact.
 | **Logging** | stdout/stderr → Cloud Logging automatically | No code change needed |
 | **Monitoring** | App Insights disabled (env var left blank) | Opt-in; Cloud Logging is sufficient for now |
 | **Key Vault** | Disabled (env var left blank) | Already gated — safe to omit |
-| **Bicep / azd files** | Left in repo untouched | Azure rollback path preserved |
+| **Bicep / azd files** | Removed | Azure infrastructure has been decommissioned |
 
 ---
 
-## Azure prerequisites (one-time manual steps)
+## One-time manual steps
 
-### 1. Enable Cosmos DB account-key auth
-
-The current Bicep provisions Cosmos with `disableLocalAuth: true` (managed-identity
-only). Cloud Run cannot use managed identity against an Azure Cosmos account, so
-key auth must be re-enabled.
-
-**Option A — Azure Portal:**
-Azure Portal → Cosmos DB account → Settings → Keys → toggle "Disable local authentication" **off**.
-
-**Option B — Azure CLI:**
-```bash
-az cosmosdb update \
-  --name <COSMOS_ACCOUNT_NAME> \
-  --resource-group <RESOURCE_GROUP> \
-  --disable-local-auth false
-```
-
-After this, copy the **Primary Key** (or Secondary Key) from the Keys blade.
-Store it securely in Secret Manager (see step 3 below).
-
-### 2. Update Entra ID SPA redirect URIs
+### 1. Update Entra ID SPA redirect URIs
 
 If MSAL authentication is enabled (all three `VITE_AZURE_*` vars are set):
 
@@ -56,7 +36,7 @@ https://<WEB_SERVICE_NAME>-<HASH>-<REGION>.a.run.app
 ```
 Also add your custom domain here if you configure one later.
 
-### 3. Store the Cosmos key in Secret Manager (recommended)
+### 2. Store the Cosmos key in Secret Manager (recommended)
 
 ```bash
 # Create the secret
@@ -80,6 +60,10 @@ gcloud secrets add-iam-policy-binding cosmos-db-key \
 
 Then reference it in your `gcloud run deploy` command with
 `--set-secrets=AZURE_COSMOS_KEY=cosmos-db-key:latest`.
+
+> **Note:** Cosmos DB account-key auth must be enabled on the Cosmos account
+> (Azure Portal → Cosmos DB account → Settings → Keys → "Disable local authentication" must be **off**).
+> Copy the Primary Key from the Keys blade and store it in Secret Manager as shown above.
 
 ---
 
@@ -193,7 +177,7 @@ export WEB_SERVICE_NAME=dales-web
 export API_IMAGE=REGION-docker.pkg.dev/PROJECT_ID/ARTIFACT_REPO/api:latest
 export WEB_IMAGE=REGION-docker.pkg.dev/PROJECT_ID/ARTIFACT_REPO/web:latest
 
-# Get these from Azure Portal / your existing azd env
+# Get Cosmos endpoint + Entra IDs from Azure Portal / your environment config
 export COSMOS_ENDPOINT=https://YOUR_ACCOUNT.documents.azure.com:443/
 export ENTRA_TENANT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 export ENTRA_API_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
@@ -335,21 +319,6 @@ gcloud logging read \
 ```
 
 Or use the Cloud Console: Logging → Logs Explorer → filter by Cloud Run service.
-
----
-
-## Rollback to Azure
-
-The existing Azure deployment files are **not modified** by Phase 1:
-- `infra/` — Bicep + AVM modules
-- `azure.yaml` — azd service definitions
-- `.github/workflows/azure-dev.yml` — GitHub Actions Azure pipeline
-- `.azdo/pipelines/azure-dev.yml` — Azure DevOps pipeline
-
-To redeploy to Azure at any time:
-```bash
-azd deploy --no-prompt
-```
 
 ---
 

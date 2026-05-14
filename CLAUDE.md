@@ -4,14 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Dales Operations is a store-operations web app built as an Azure Developer CLI (`azd`) template. It has three top-level pieces under a single repo:
+Dales Operations is a store-operations web app. It has three top-level pieces under a single repo:
 
 - `src/api` — Express + TypeScript REST API backed by Azure Cosmos DB (SQL API).
 - `src/web` — React 18 + Fluent UI frontend built with Vite.
 - `tests` — Playwright smoke tests that exercise the deployed/local web frontend.
-- `infra` — Bicep IaC (AVM modules) provisioning App Service (x2), Cosmos DB, Key Vault, Application Insights, and a managed identity.
 
-`azure.yaml` wires the two services (`web`, `api`) to `azd`. The `web` prepackage hook writes a `.env.local` at build time with `VITE_API_BASE_URL` + AppInsights connection string sourced from Bicep outputs, then deletes it post-deploy.
+Both services run on GCP Cloud Run. See `docs/gcp-cloud-run-phase1.md` and `docs/gcp-deployment.md` for deployment details. CI/CD is in `.github/workflows/gcp-deploy.yml`.
 
 ## Common commands
 
@@ -45,11 +44,9 @@ E2E (`tests/`):
 
 ```bash
 npm ci && npx playwright install --with-deps chromium
-npx playwright test                  # uses REACT_APP_WEB_BASE_URL, then .azure/<env>/.env, then http://localhost:5173
+npx playwright test                  # uses REACT_APP_WEB_BASE_URL, then http://localhost:5173
 npx playwright test --headed --debug
 ```
-
-Deployment: `azd up` (provision + deploy), `azd deploy` (code only), `azd down` (teardown).
 
 ## API architecture
 
@@ -70,7 +67,7 @@ The API is deliberately small and uniform across the six domain collections: **e
   - Enum sets live at the top of the file (`TASK_STATUSES`, `TASK_PRIORITIES`, `ISSUE_STATUSES`).
 - **`src/routes/dashboard.ts`** — the one non-CRUD route. `GET /dashboard?date=YYYY-MM-DD` reads all six collections in parallel and aggregates counts, urgent tasks, open issues, coaching follow-ups due, active employee count, productivity totals, and the latest summary.
 
-To add a new collection: add its name to `containerNames` in `cosmosClient.ts`, add a container in `infra/app/db-avm.bicep` with the same name, add a model + validator, and create a route file that calls `createCrudRouter` — mirror `src/routes/employees.ts`.
+To add a new collection: add its name to `containerNames` in `cosmosClient.ts`, add the Cosmos DB container manually or via your provisioning process, add a model + validator, and create a route file that calls `createCrudRouter` — mirror `src/routes/employees.ts`.
 
 Tests all live in `src/routes/routes.spec.ts` and use `supertest` against the real Express app with `NODE_ENV=test` set in `beforeAll`. `clearMockData()` in `beforeEach` resets the in-memory store.
 
@@ -110,7 +107,7 @@ VITE_AZURE_TENANT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 VITE_AZURE_API_SCOPE=api://<api-client-id>/access_as_user
 ```
 
-For `azd` deployments, `VITE_AZURE_TENANT_ID`, `VITE_AZURE_CLIENT_ID`, and `VITE_AZURE_API_SCOPE` are now Bicep outputs wired through to the `azure.yaml` prepackage hook automatically — set `VITE_SPA_CLIENT_ID` and `VITE_API_SCOPE` via `azd env set` before provisioning.
+For GCP Cloud Run deployments, `VITE_AZURE_TENANT_ID`, `VITE_AZURE_CLIENT_ID`, and `VITE_AZURE_API_SCOPE` are passed as Docker build args in the CI workflow — set them as GitHub repository variables (`VITE_AZURE_CLIENT_ID`, `VITE_AZURE_TENANT_ID`, `VITE_AZURE_API_SCOPE`). See `docs/gcp-deployment.md`.
 
 ### Local development notes
 
@@ -121,27 +118,24 @@ For `azd` deployments, `VITE_AZURE_TENANT_ID`, `VITE_AZURE_CLIENT_ID`, and `VITE
 
 ### Production auth enforcement — current state (complete)
 
-All infrastructure and application code is wired for production auth enforcement:
+All application code is wired for production auth enforcement:
 
-1. **API middleware** ✅ — `createAuthMiddleware` in `src/api/src/middleware/auth.ts` validates RS256 Bearer JWTs; enforced when `NODE_ENV=production`.
-2. **Bicep** ✅ — `infra/main.bicep` sets `NODE_ENV=production` + `AZURE_AD_TENANT_ID` + `AZURE_AD_CLIENT_ID` on the API App Service when `AZURE_AD_CLIENT_ID` parameter is non-empty.
-3. **azd parameters** ✅ — `infra/main.parameters.json` binds `AZURE_AD_CLIENT_ID`, `VITE_SPA_CLIENT_ID`, `VITE_API_SCOPE` from `azd env` values.
-4. **Web build** ✅ — Bicep outputs `VITE_AZURE_TENANT_ID`, `VITE_AZURE_CLIENT_ID`, `VITE_AZURE_API_SCOPE`; `azure.yaml` prepackage hook bakes them into the web bundle.
-5. **Token validation** ✅ — `validateToken()` checks `iss`, `aud`, `exp`, `nbf`, and RS256 signature against live Entra ID JWKS.
+1. **API middleware** ✅ — `createAuthMiddleware` in `src/api/src/middleware/auth.ts` validates RS256 Bearer JWTs; enforced when `NODE_ENV=production` and `AZURE_AD_CLIENT_ID` is set.
+2. **Token validation** ✅ — `validateToken()` checks `iss`, `aud`, `exp`, `nbf`, and RS256 signature against live Entra ID JWKS.
+3. **Deployment wiring** ✅ — The GCP Cloud Run deploy workflow sets `NODE_ENV=production`, `AZURE_AD_TENANT_ID`, `AZURE_AD_CLIENT_ID` on the API service; the web image is built with `VITE_AZURE_*` build args baked in.
 
 **Remaining manual steps** (cannot be automated — require Azure Portal access):
 - Create Entra ID App Registrations for the API and SPA
 - Expose `access_as_user` scope on the API app registration
 - Grant the SPA app delegated permission to call the API scope
 - Ensure admin consent is granted in the tenant
-- Set `azd env set AZURE_AD_CLIENT_ID`, `VITE_SPA_CLIENT_ID`, `VITE_API_SCOPE` then run `azd provision`
+- Set GitHub repository variables `AZURE_AD_CLIENT_ID`, `VITE_AZURE_CLIENT_ID`, `VITE_AZURE_API_SCOPE` before the next CI deploy
 
-## Infra + CI
+## CI/CD
 
-- `infra/main.bicep` is the entry point; `infra/app/*.bicep` holds per-resource AVM modules. Container names in `infra/app/db-avm.bicep` must match `containerNames` in `src/api/src/models/cosmosClient.ts`.
-- API authenticates to Cosmos DB + Key Vault via a user-assigned managed identity (RBAC data-plane role assignment in `cosmos-role-assignment.bicep`). **There are no connection strings at runtime** — avoid introducing any.
-- CI/CD pipelines exist for both GitHub Actions (`.github/workflows/azure-dev.yml`) and Azure DevOps (`.azdo/pipelines/`); configure with `azd pipeline config`.
-- The API App Service `siteConfig.healthCheckPath` is set to `/health` in `main.bicep`. Azure probes this path every minute and replaces instances that fail consistently.
+- CI/CD runs in `.github/workflows/gcp-deploy.yml` — builds both Docker images, pushes to Artifact Registry, deploys to Cloud Run, then runs Playwright smoke tests.
+- The API authenticates to Cosmos DB using `AZURE_COSMOS_KEY` (stored in GCP Secret Manager and injected via `--set-secrets`). `AZURE_KEY_VAULT_ENDPOINT` is not set in Cloud Run, so the Key Vault code path is skipped at startup.
+- The `/health` endpoint is always open (no auth) — Cloud Run and smoke tests both probe it.
 
 ## Conventions worth preserving
 
