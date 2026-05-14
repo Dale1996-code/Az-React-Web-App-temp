@@ -15,7 +15,7 @@ export const logger = winston.createLogger({
     level: "info",
     format: winston.format.json(),
     transports: [
-        // Always log to stdout so App Service log stream (az webapp log tail) captures output
+        // Always log to stdout — captured by Cloud Run / Cloud Logging automatically
         // regardless of whether App Insights is configured.
         new winston.transports.Console({ format: winston.format.simple() }),
         new winston.transports.File({ filename: "error.log", level: "error" }),

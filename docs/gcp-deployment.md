@@ -11,8 +11,8 @@ need to create once, the GitHub variables and secrets to configure, and the
 manual validation steps you should run before merging the workflow.
 
 > **Out of scope for Phase 2.** Cosmos DB stays on Azure. Entra ID / MSAL
-> auth stays the same. The Bicep stack and `azure.yaml` are intentionally left
-> in place so the Azure workflow can be re-enabled as an emergency rollback.
+> auth stays the same. The Azure Bicep infrastructure (`infra/`, `azure.yaml`)
+> has been removed — the GCP Cloud Run deployment is now the sole deployment path.
 > See [`gcp-cloud-run-phase1.md`](./gcp-cloud-run-phase1.md) for the runtime
 > setup (Artifact Registry, Cosmos key in Secret Manager, redirect URIs).
 
@@ -38,8 +38,7 @@ manual validation steps you should run before merging the workflow.
 12. Runs Playwright smoke tests against the deployed Cloud Run URLs and uploads
     the report as a build artifact.
 
-The Azure workflow (`azure-dev.yml`) has had its push trigger removed and is
-retained only for manual rollback during the migration.
+The Azure workflow (`azure-dev.yml`) has been removed — GCP Cloud Run is the only deployment path.
 
 ---
 
@@ -137,7 +136,7 @@ projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github-pool/provi
 
 ### 4. Cosmos DB key in Secret Manager
 
-See [phase 1 doc step 3](./gcp-cloud-run-phase1.md#3-store-the-cosmos-key-in-secret-manager-recommended).
+See [phase 1 doc — store the Cosmos key in Secret Manager](./gcp-cloud-run-phase1.md#2-store-the-cosmos-key-in-secret-manager-recommended).
 The default secret name expected by the workflow is `cosmos-db-key`. Override
 it by setting the `GCP_COSMOS_KEY_SECRET` GitHub variable.
 
@@ -256,33 +255,16 @@ following manually:
 These cannot be automated and have to be done once by an operator with the
 right Azure / GCP rights:
 
-1. Re-enable account-key auth on Cosmos DB and copy the primary key into
-   Secret Manager (Phase 1 doc, steps 1 + 3).
+1. Ensure account-key auth is enabled on Cosmos DB and copy the primary key into
+   Secret Manager (Phase 1 doc — Secret Manager section).
 2. Add the Cloud Run web URL as a redirect URI on the SPA app registration
-   in Entra ID (Phase 1 doc, step 2).
+   in Entra ID (Phase 1 doc — Update Entra ID SPA redirect URIs).
 3. Create the Artifact Registry repo, deployer SA, and Workload Identity Pool
    (steps above).
 4. Bind the GitHub repository to the deployer SA via
    `roles/iam.workloadIdentityUser` (step 3 above).
 5. (Optional) Map a custom domain to the web Cloud Run service and add it to
    `API_ALLOW_ORIGINS_EXTRA` plus the SPA app registration redirect URIs.
-
----
-
-## Rollback to Azure
-
-The Azure workflow at `.github/workflows/azure-dev.yml` is retained but its
-push trigger has been removed. To roll back:
-
-1. Go to **Actions → Deploy Dales Operations to Azure → Run workflow**.
-2. Confirm the Azure environment variables (`AZURE_ENV_NAME`, `AZURE_LOCATION`,
-   `AZURE_SUBSCRIPTION_ID`, etc.) are still configured.
-3. The Azure infra (`infra/`, `azure.yaml`) is unchanged from before the
-   migration, so `azd provision` + `azd deploy` still work.
-
-If/when Cloud Run has been stable for long enough to drop the Azure path, a
-follow-up phase can delete `infra/`, `azure.yaml`, `.azdo/`, and
-`.github/workflows/azure-dev.yml`.
 
 ---
 

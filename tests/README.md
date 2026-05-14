@@ -62,7 +62,7 @@ All checks are **read-only** and **safe for an empty database** — no data is c
 | `REACT_APP_WEB_BASE_URL` | Base URL for browser tests (web frontend) | `http://localhost:5173` |
 | `REACT_APP_API_BASE_URL` | Base URL for direct API requests | `http://localhost:3100` |
 
-In CI both are set automatically from `azd env get-values` (`SERVICE_WEB_URI` and `SERVICE_API_URI`).
+In CI both are set automatically from the Cloud Run deploy step outputs (`SERVICE_WEB_URI` and `SERVICE_API_URI`).
 
 ### Required for authenticated smoke check
 
