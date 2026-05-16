@@ -1,1 +1,16 @@
 .azure
+
+# Local dependency installs
+node_modules/
+
+# Local agent/tool settings
+.claude/
+
+# Local run logs and downloaded Azure App Service logs
+*.err.log
+*.out.log
+api-logs/
+api-logs.zip
+
+# Generated Bicep/ARM output
+infra/main.json
