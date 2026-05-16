@@ -100,22 +100,43 @@ done
 
 ### 4. Firestore access for the API at runtime
 
-The API talks to Firestore as the **Cloud Run runtime service account**. By
-default that is the Compute Engine default service account. Grant it the
-Firestore (Datastore) user role:
+The API talks to Firestore as the **Cloud Run runtime service account**, using
+Application Default Credentials — no key files. Create a dedicated runtime
+service account for the API so it holds only the permissions it needs
+(principle of least privilege — this limits the blast radius if the account is
+ever compromised):
 
 ```bash
-PROJECT_NUMBER=$(gcloud projects describe PROJECT_ID --format='value(projectNumber)')
-RUNTIME_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+gcloud iam service-accounts create dales-api-runtime \
+  --project=PROJECT_ID \
+  --display-name="Dales Operations API runtime (Firestore access)"
+
+RUNTIME_SA="dales-api-runtime@PROJECT_ID.iam.gserviceaccount.com"
 
 gcloud projects add-iam-policy-binding PROJECT_ID \
   --member="serviceAccount:${RUNTIME_SA}" \
   --role="roles/datastore.user"
 ```
 
-> To use a dedicated runtime SA instead, create one, grant it
-> `roles/datastore.user`, and add `--service-account` to the `gcloud run deploy`
-> commands in the workflow.
+Then add `--service-account=${RUNTIME_SA}` to the API `gcloud run deploy`
+command in `.github/workflows/gcp-deploy.yml` so Cloud Run runs the API as this
+account. The deployer service account needs `roles/iam.serviceAccountUser` to
+act as it — it already has that role project-wide from step 3.
+
+> **Quicker dev-only alternative:** skip the dedicated SA and grant
+> `roles/datastore.user` to the Compute Engine default service account
+> (`PROJECT_NUMBER-compute@developer.gserviceaccount.com`), which Cloud Run uses
+> by default:
+>
+> ```bash
+> PROJECT_NUMBER=$(gcloud projects describe PROJECT_ID --format='value(projectNumber)')
+> gcloud projects add-iam-policy-binding PROJECT_ID \
+>   --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+>   --role="roles/datastore.user"
+> ```
+>
+> This is simpler but over-privileged — not recommended for environments
+> handling real data.
 
 ### 5. Workload Identity Federation pool and provider
 
