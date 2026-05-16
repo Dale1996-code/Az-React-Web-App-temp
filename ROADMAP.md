@@ -1,6 +1,6 @@
 # Dales Operations — Roadmap
 
-Last updated: 2026-04-30
+Last updated: 2026-05-16
 
 This file describes the feature build-out history and the production-readiness hardening work done after the initial MVP. It is the single source of truth for what is complete, what is deferred, and why.
 
@@ -12,7 +12,7 @@ These phases built the core application from scratch. All are merged to `main`.
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| F1 | Project scaffold: azd template, Express API, React + Fluent UI shell | ✅ Complete |
+| F1 | Project scaffold: Express API, React + Fluent UI shell, local dev scripts | ✅ Complete |
 | F2 | Employees CRUD (list, create, edit, delete) | ✅ Complete |
 | F3 | Tasks CRUD with status, priority, department, assignee | ✅ Complete |
 | F4 | Productivity records CRUD (freight units, zones, breaks) | ✅ Complete |
@@ -49,55 +49,49 @@ These phases hardened the application for real deployment. All are merged to `ma
 ### H2 — Frontend MSAL authentication
 **PR #55 / commit `de33d90`**
 
-- `@azure/msal-browser` and `@azure/msal-react` added to web dependencies.
-- `authService.ts`: `PublicClientApplication` built from `VITE_AZURE_CLIENT_ID`, `VITE_AZURE_TENANT_ID`, `VITE_AZURE_API_SCOPE`. Returns `null` when auth env vars are absent (no overhead in local dev).
-- `AuthProvider.tsx`: wraps the app in `MsalProvider` + `MsalBridge`. `MsalBridge` triggers `loginRedirect` when no account is cached; shows "Signing you in…" overlay during redirect; surfaces a dismissible error bar on auth failure.
+> **Note:** Auth was implemented in full, then subsequently disabled when the app migrated from Azure to GCP. The MSAL code remains in the codebase but stays inert — all `VITE_AZURE_*` env vars are blank by default, so no MSAL overhead is added in any deployment. See CLAUDE.md for current auth state.
+
+- `authService.ts`: `PublicClientApplication` built from `VITE_AZURE_CLIENT_ID`, `VITE_AZURE_TENANT_ID`, `VITE_AZURE_API_SCOPE`. Returns `null` when auth env vars are absent.
+- `AuthProvider.tsx`: wraps the app in `MsalProvider` + `MsalBridge` when auth is enabled.
 - `apiClient.ts`: request interceptor acquires a token silently and attaches `Authorization: Bearer <token>` when auth is enabled.
 - Local dev: leave all three `VITE_AZURE_*` vars blank → no MSAL overhead, no auth header.
-- Web unit tests updated to cover `AuthProvider` in both enabled and disabled states.
 
 ### H3 — Production API auth enforcement
 **PR #58 / commit `ae2968d`**
 
-> **Note on phase numbering:** There is no separate "H3 — enable API auth" PR because the API middleware (`src/api/src/middleware/auth.ts`) was written in full during H2 as part of the end-to-end auth spike. H3 is defined here as the Bicep-level wiring that activates enforcement in production.
+> **Note:** The API auth middleware was written and wired up, then removed during the GCP migration. Auth is currently disabled — all endpoints are open. Adding an identity provider (e.g. Firebase Auth or Google Identity) is a deferred task.
 
-- `src/api/src/middleware/auth.ts`: `createAuthMiddleware` validates RS256 Bearer JWTs using Node.js built-in crypto. Enforces when `NODE_ENV=production` AND `AZURE_AD_CLIENT_ID` is set. Bypasses with a startup warning in development/test. Fails the process at startup if `NODE_ENV=production` but credentials are missing.
-- `infra/main.bicep`: sets `NODE_ENV=production`, `AZURE_AD_TENANT_ID`, `AZURE_AD_CLIENT_ID` on the API App Service when `azureAdClientId` parameter is non-empty.
-- `infra/main.parameters.json`: binds `AZURE_AD_CLIENT_ID`, `VITE_SPA_CLIENT_ID`, `VITE_API_SCOPE` from `azd env` values.
-- `azure.yaml` prepackage hook: bakes `VITE_AZURE_TENANT_ID`, `VITE_AZURE_CLIENT_ID`, `VITE_AZURE_API_SCOPE` into the web bundle from Bicep outputs.
-- `/health` is always unauthenticated — used by App Service probes.
-
-### H4 — Authenticated CI and smoke test hardening
+### H4 — CI/CD pipeline and smoke test hardening
 **PR #57 / commit `4f929e7`**
 
-- GitHub Actions: OpenAPI sync check, API tests, API build, web build, `azd provision`, `azd deploy`, Playwright smoke tests, HTML report artifact upload.
+- GitHub Actions workflow: OpenAPI sync check, API tests, API build, web build, deploy, Playwright smoke tests, HTML report artifact upload.
 - Playwright smoke suite (`tests/smoke.spec.ts`):
-  - Route-shell checks for all 7 pages (auth-agnostic).
+  - Route-shell checks for all 7 pages.
   - `GET /health` returns 200 with correct shape.
-  - `GET /dashboard` via browser: accepts 200 or 401 (both confirm API reachability).
-  - Authenticated `GET /dashboard`: acquires a service-principal token via OAuth2 client credentials, calls the API directly, validates response schema. Skipped (non-blocking) when `SMOKE_AZURE_*` secrets are absent; blocking when present.
-- Azure DevOps pipeline updated: OpenAPI sync check and API tests added. Frontend build and Playwright intentionally absent — see comments in `.azdo/pipelines/azure-dev.yml` for rationale.
+  - `GET /dashboard` via browser confirms API reachability.
+- Preflight scripts (`preflight.sh` / `preflight.ps1`) for local pre-deploy validation.
 
-### H5 — Azure production baseline and observability
+### H5 — Observability baseline
 **PR #56 / commit `31d919e`**
 
-- `RUNBOOK.md`: preflight checklist, `azd up` steps, required env vars, rollback steps, log-streaming commands, KQL queries for triage, 401/500/health failure diagnosis.
-- `infra/app/alerts.bicep`: 5xx spike alert and health check failure alert via Action Group email. Only provisioned when `appServicePlanSkuName` ≥ B1 (F1 does not support health probes or metric alerts).
-- App Insights connection string wired through Bicep → `azure.yaml` hook → `VITE_APPLICATIONINSIGHTS_CONNECTION_STRING` in the web bundle.
-- `/health` endpoint (`GET /health`) always returns `{ status: "ok", timestamp, env }` without auth. App Service `healthCheckPath` set in Bicep when SKU ≥ B1.
-- README updated with accurate auth flow, troubleshooting, and deployment cost estimates.
+- `RUNBOOK.md`: preflight checklist, deploy steps, environment variable reference, rollback steps, log commands, triage playbook.
+- `/health` endpoint (`GET /health`) returns `{ status: "ok", timestamp, env }` without auth. Used by Cloud Run health probes.
+- README updated with accurate troubleshooting, deployment, and local dev docs.
 
-### H6 — Cosmos query and index tuning
-**Commit on `claude/production-readiness-roadmap-dPSrQ`**
+### H6 — GCP / Cloud Run / Firestore migration
+**PR #64**
 
-All containers use `/id` as the partition key, making every WHERE-plus-ORDER-BY query cross-partition. Without composite indexes, the Cosmos SQL API returns an error for ORDER BY combined with a filter on a different field.
+Complete migration from Azure (App Service + Cosmos DB + Key Vault + Bicep/azd) to GCP:
 
-Composite indexes added in `infra/app/db-avm.bicep`:
-- **issues**: `[status ASC, storeDate DESC]` — dashboard query: `WHERE status='open' ORDER BY storeDate DESC`
-- **coaching**: `[followUpDate ASC]` — dashboard query: `WHERE followUpDate <= date ORDER BY followUpDate ASC`
-- **tasks**: `[storeDate ASC, status ASC]` and `[storeDate ASC, department ASC]` — route list queries combining date + status or date + department filters
-
-**OFFSET/LIMIT note:** The current pagination uses `OFFSET n LIMIT m` (embedded in Cosmos SQL). This is correct and functional at small-to-medium scale. At large scale (thousands of records, deep pages), continuation tokens (`FeedOptions.continuationToken`) are more efficient because they avoid re-scanning skipped rows on every page request. This is a deferred improvement — see `src/api/src/models/baseRepository.ts` `buildSelectSql()` for the implementation point.
+- **Firestore** replaces Cosmos DB as the data store (`src/api/src/models/firestoreClient.ts`). All queries run as full-collection reads filtered in memory — Firestore has no case-insensitive or substring query support.
+- **Cloud Run** replaces App Service for both API and web services. Both services are built as Docker images pushed to Artifact Registry.
+- **Workload Identity Federation** replaces service account key files for GitHub Actions → GCP authentication.
+- **Application Default Credentials** on the Cloud Run runtime service account replaces connection strings for Firestore access.
+- **GitHub Actions** (`gcp-deploy.yml`) replaces the `azd` pipeline.
+- All Azure infrastructure code (`infra/`, `azure.yaml`, `.azdo/`) removed.
+- All Azure SDK dependencies (`@azure/cosmos`, `@azure/identity`, `@azure/keyvault-secrets`) removed.
+- Auth middleware removed — API endpoints are fully open until an identity provider is added.
+- Timestamps stored as ISO strings to avoid Firestore `Timestamp` ↔ JS `Date` serialization issues.
 
 ---
 
@@ -107,46 +101,11 @@ These are not planned for the current release. Revisit if usage or team needs ch
 
 | Item | Rationale for deferral |
 |------|------------------------|
-| Continuation-token pagination | OFFSET/LIMIT is correct now; migrate when collection sizes require it |
-| Deployment slots (blue/green) | Requires B2+ App Service Plan; rollback via redeploy is adequate for now |
+| End-user authentication | Auth disabled for now; add Firebase Auth or Google Identity when needed |
+| Continuation-token pagination | Full-collection reads are fine at current data volumes; revisit if collections grow large |
+| Firestore composite indexes | In-memory filtering covers all current queries; revisit with native Firestore queries if performance becomes an issue |
+| Cloud Monitoring alert policies | Manual uptime check is sufficient now; add metric alerts when usage warrants |
+| Terraform / IaC for GCP resources | Cloud Run config lives in the workflow's `gcloud run deploy` flags; formalize with Terraform once the shape stabilises |
+| Role-based authorization (RBAC) | All users currently have equal access; add when store-manager vs. associate distinction is needed |
 | Redis cache for dashboard | Dashboard queries are bounded and fast at current data volumes |
-| Azure WAF in front of App Services | Add if the app is exposed to the public internet with meaningful traffic |
-| Role-based authorization (RBAC) | All authenticated users currently have equal access; add when store-manager vs. associate distinction is needed |
-| Database backup exports | Cosmos DB point-in-time restore is available at account level; scheduled exports are optional |
-| ADO Playwright parity | ADO pipeline is a fallback; bring to full parity only if ADO becomes the primary CI path |
-| Azure Policy guardrails | Good practice for org-wide governance; not required for a single-team app |
-
----
-
-## Required manual steps before first production deploy
-
-The following cannot be automated — they require Azure Portal or CLI access outside the `azd` flow:
-
-1. Create an Entra ID App Registration for the **API** app:
-   - Expose an API scope: `access_as_user`
-   - Note the Application (client) ID → use as `AZURE_AD_CLIENT_ID`
-
-2. Create an Entra ID App Registration for the **SPA** (frontend):
-   - Platform: Single-page application
-   - Add redirect URI: `https://<your-web-app-hostname>` (and `http://localhost:5173` for dev)
-   - Grant delegated permission to the API scope above
-   - Ensure admin consent is granted
-   - Note the Application (client) ID → use as `VITE_SPA_CLIENT_ID`
-
-3. Set `azd env` values before running `azd provision`:
-   ```bash
-   azd env set AZURE_AD_CLIENT_ID   <api-app-registration-client-id>
-   azd env set VITE_SPA_CLIENT_ID   <spa-app-registration-client-id>
-   azd env set VITE_API_SCOPE       api://<api-client-id>/access_as_user
-   ```
-
-4. (Optional) Configure email alerting (B1+ SKU only):
-   ```bash
-   azd env set ALERT_EMAIL ops@example.com
-   ```
-
-5. (Optional) Configure authenticated CI smoke check — add repository secrets:
-   - `SMOKE_AZURE_TENANT_ID`
-   - `SMOKE_AZURE_CLIENT_ID`
-   - `SMOKE_AZURE_CLIENT_SECRET`
-   - `SMOKE_AZURE_API_SCOPE`
+| Database backup exports | Firestore has automated backups; scheduled exports are optional |
