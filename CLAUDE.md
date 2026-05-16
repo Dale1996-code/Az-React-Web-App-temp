@@ -4,14 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Dales Operations is a store-operations web app built as an Azure Developer CLI (`azd`) template. It has three top-level pieces under a single repo:
+Dales Operations is a store-operations web app that runs on Google Cloud. It has three top-level pieces under a single repo:
 
-- `src/api` — Express + TypeScript REST API backed by Azure Cosmos DB (SQL API).
+- `src/api` — Express + TypeScript REST API backed by Google Cloud Firestore (native mode).
 - `src/web` — React 18 + Fluent UI frontend built with Vite.
 - `tests` — Playwright smoke tests that exercise the deployed/local web frontend.
-- `infra` — Bicep IaC (AVM modules) provisioning App Service (x2), Cosmos DB, Key Vault, Application Insights, and a managed identity.
 
-`azure.yaml` wires the two services (`web`, `api`) to `azd`. The `web` prepackage hook writes a `.env.local` at build time with `VITE_API_BASE_URL` + AppInsights connection string sourced from Bicep outputs, then deletes it post-deploy.
+Both services are containerised and deployed to **Cloud Run**. The CI/CD workflow lives at `.github/workflows/gcp-deploy.yml`; see `docs/gcp-deployment.md` for the full deployment guide.
+
+> **End-user authentication is currently disabled** — the API endpoints are open. The frontend MSAL code is still present but inert (it activates only when the `VITE_AZURE_*` env vars are set, which they no longer are).
 
 ## Common commands
 
@@ -45,22 +46,22 @@ E2E (`tests/`):
 
 ```bash
 npm ci && npx playwright install --with-deps chromium
-npx playwright test                  # uses REACT_APP_WEB_BASE_URL, then .azure/<env>/.env, then http://localhost:5173
+npx playwright test                  # uses REACT_APP_WEB_BASE_URL, defaults to http://localhost:5173
 npx playwright test --headed --debug
 ```
 
-Deployment: `azd up` (provision + deploy), `azd deploy` (code only), `azd down` (teardown).
+Deployment: push to `main`/`master` (or manually dispatch the `Deploy to Google Cloud Run` workflow). See `docs/gcp-deployment.md`.
 
 ## API architecture
 
 The API is deliberately small and uniform across the six domain collections: **employees, tasks, productivity, coaching, issues, summaries**. Understanding the three shared modules below means you understand all six routers.
 
-- **`src/app.ts`** — builds the Express app. Mounts one router per collection plus `/dashboard`, a `/health` probe, and Swagger UI at `/` (from `./openapi.yaml`). CORS is wide-open when `NODE_ENV=development`; otherwise it allows the Azure portal hosts plus anything in `API_ALLOW_ORIGINS` (comma-separated).
-- **`src/config/index.ts`** — on startup, if `AZURE_KEY_VAULT_ENDPOINT` is set, iterates every secret in the vault and overlays it onto `process.env` (replacing `-` with `_` in names) *before* `require("config")` reads it. Key Vault secrets win over local env. `.env` is loaded unless `NODE_ENV=production`.
-- **`src/models/cosmosClient.ts`** — single shared `CosmosClient` authenticated with `DefaultAzureCredential` (managed identity in Azure; developer credential locally). Caches a `Container` handle per collection in `containerNames`. **When `NODE_ENV=test`, `configureCosmos` is skipped and `getContainer` returns an in-memory `Map`-backed mock** — this is what makes `npm test` require no DB. `clearMockData()` resets it between tests.
-- **`src/models/baseRepository.ts`** — `BaseRepository<T extends BaseEntity>` provides generic `findAll / findById / create / update / delete` on top of a `Container`. `create` stamps `id` (uuidv4), `createdDate`, `updatedDate`; `update` merges + forbids changing `id`. 404s from Cosmos become `null`/`false`.
+- **`src/app.ts`** — builds the Express app. Mounts one router per collection plus `/dashboard`, a `/health` probe, and Swagger UI at `/` (from `./openapi.yaml`). CORS is wide-open when `NODE_ENV=development`; otherwise it allows the origins listed in `API_ALLOW_ORIGINS` (comma-separated).
+- **`src/config/index.ts`** — loads `.env` (unless `NODE_ENV=production`), then reads settings via the `config` npm package. The Firestore project id is optional (resolved from Application Default Credentials at runtime).
+- **`src/models/firestoreClient.ts`** — initialises the shared `Firestore` client, which authenticates via Application Default Credentials (the Cloud Run runtime service account in production; `gcloud auth application-default login` locally). `getStore(name)` returns a `DocStore` for a collection. **When `NODE_ENV=test`, `configureFirestore` is skipped and `getStore` returns an in-memory `Map`-backed store** — this is what makes `npm test` require no DB. `clearMockData()` resets it between tests.
+- **`src/models/baseRepository.ts`** — `BaseRepository<T extends BaseEntity>` provides generic `findAll / findWhere / countWhere / findById / create / update / delete` on top of a `DocStore`. `create` stamps `id` (uuidv4), `createdDate`, `updatedDate` (ISO strings); `update` merges + forbids changing `id`. Filtering (`findWhere`/`countWhere`) fetches the whole collection and evaluates `FilterCondition`s in memory — Firestore has no case-insensitive or substring query support.
 - **`src/routes/createCrudRouter.ts`** — factory that produces the standard `GET / POST /:id GET/:id PUT/:id DELETE /:id` router for a collection. Arguments:
-  - `getRepository: () => BaseRepository<T>` — a *factory* (not a value) so the container is resolved lazily after `configureCosmos`.
+  - `getRepository: () => BaseRepository<T>` — a *factory* (not a value) so the Firestore collection is resolved lazily after `configureFirestore`.
   - `label` — used in error logs.
   - `validate?: Validator` — called on POST with `isUpdate=false` and PUT with `isUpdate=true`. On failure returns 400 `{ error, details }`. On success, the sanitized body replaces `req.body` before hitting the repo.
   - `queryFilter?` — optional in-memory filter applied on `GET /` before `?top`/`?skip` pagination (default `top=100, skip=0`).
@@ -70,14 +71,14 @@ The API is deliberately small and uniform across the six domain collections: **e
   - Enum sets live at the top of the file (`TASK_STATUSES`, `TASK_PRIORITIES`, `ISSUE_STATUSES`).
 - **`src/routes/dashboard.ts`** — the one non-CRUD route. `GET /dashboard?date=YYYY-MM-DD` reads all six collections in parallel and aggregates counts, urgent tasks, open issues, coaching follow-ups due, active employee count, productivity totals, and the latest summary.
 
-To add a new collection: add its name to `containerNames` in `cosmosClient.ts`, add a container in `infra/app/db-avm.bicep` with the same name, add a model + validator, and create a route file that calls `createCrudRouter` — mirror `src/routes/employees.ts`.
+To add a new collection: add its name to `collectionNames` in `firestoreClient.ts`, add a model + validator, and create a route file that calls `createCrudRouter` — mirror `src/routes/employees.ts`. Firestore creates the collection on first write, so no schema setup is needed.
 
 Tests all live in `src/routes/routes.spec.ts` and use `supertest` against the real Express app with `NODE_ENV=test` set in `beforeAll`. `clearMockData()` in `beforeEach` resets the in-memory store.
 
 ## Web architecture
 
 - **`App.tsx` → `layout/layout.tsx`** — `ThemeProvider` (dark Fluent theme) → `BrowserRouter` → `Telemetry` → `AuthProvider` → `Layout`. The layout defines all routes: `/`, `/employees`, `/tasks`, `/productivity`, `/coaching`, `/issues`, `/summary`, plus `*` → `Navigate to="/"`. Sidebar open/close state lives in `Layout`.
-- **`services/apiClient.ts`** — a single axios instance with `baseURL = config.api.baseUrl` (from `VITE_API_BASE_URL`, defaulting to `http://localhost:3100`). A request interceptor calls `acquireToken()` and attaches `Authorization: Bearer <token>` when `config.auth.enabled` is true. Every `*Service.ts` imports this and exposes typed CRUD functions matching the API routes.
+- **`services/apiClient.ts`** — a single axios instance with `baseURL = config.api.baseUrl` (from `VITE_API_BASE_URL`, defaulting to `http://localhost:3100`). A request interceptor attaches an `Authorization` header only when auth is enabled; auth is currently disabled, so requests are sent unauthenticated. Every `*Service.ts` imports this and exposes typed CRUD functions matching the API routes.
 - **`components/telemetry.tsx`** — always wraps children in the `TelemetryProvider`. On mount it calls `getApplicationInsights()` in `services/telemetryService.ts`, which short-circuits and returns `undefined` if `VITE_APPLICATIONINSIGHTS_CONNECTION_STRING` is missing or blank — so no SDK is constructed and `trackEvent` becomes a no-op. When the connection string is present the SDK loads once and is cached.
 - **`components/AuthProvider.tsx`** — wraps the app with `MsalProvider` + a `MsalBridge` when `config.auth.enabled` is true (both `VITE_AZURE_CLIENT_ID` and `VITE_AZURE_TENANT_ID` are set). When auth is disabled, it renders children directly with an empty auth context — no MSAL overhead.  `MsalBridge` triggers `loginRedirect` when no account is present and shows a "Signing you in…" overlay during the redirect flow. On error, it surfaces a dismissible message bar.
 - **`contexts/authContext.ts`** — `AuthInfo` context + `useAuthInfo()` hook. Provides `{ account, authEnabled, login(), logout() }` to any component. Safe to call regardless of whether auth is enabled.
@@ -86,65 +87,22 @@ Tests all live in `src/routes/routes.spec.ts` and use `supertest` against the re
 
 Vite env vars **must** be prefixed `VITE_`. The `VITE_API_BASE_URL` value must include a scheme (`http://` or `https://`).
 
-## Frontend authentication
+## Authentication
 
-### Current state
+End-user authentication is **disabled**. The API has no token-validation middleware and every endpoint is open. The frontend still contains MSAL-based auth code (`AuthProvider.tsx`, `authService.ts`, `authContext.ts`) but it is inert — it activates only when the `VITE_AZURE_*` env vars are set, and they are intentionally left unset.
 
-Authentication is **implemented but not enforced**. The frontend acquires tokens and attaches them to every API request when auth is configured; the API middleware exists but currently allows all requests through. This lets the two halves be wired up and tested end-to-end before enforcement is turned on.
-
-### Required app registration values
-
-| Env var | Where to find it |
-|---|---|
-| `VITE_AZURE_CLIENT_ID` | Azure Portal → App registrations → your SPA app → Overview → Application (client) ID |
-| `VITE_AZURE_TENANT_ID` | Azure Portal → App registrations → your SPA app → Overview → Directory (tenant) ID |
-| `VITE_AZURE_API_SCOPE` | Azure Portal → App registrations → your API app → Expose an API → full scope URI, e.g. `api://<api-client-id>/access_as_user` |
-
-### Required frontend environment variables
-
-Set these in `src/web/.env` for local dev (copy from `.env.example`):
-
-```env
-VITE_AZURE_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-VITE_AZURE_TENANT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-VITE_AZURE_API_SCOPE=api://<api-client-id>/access_as_user
-```
-
-For `azd` deployments, `VITE_AZURE_TENANT_ID`, `VITE_AZURE_CLIENT_ID`, and `VITE_AZURE_API_SCOPE` are now Bicep outputs wired through to the `azure.yaml` prepackage hook automatically — set `VITE_SPA_CLIENT_ID` and `VITE_API_SCOPE` via `azd env set` before provisioning.
-
-### Local development notes
-
-- Leave all three `VITE_AZURE_*` vars **blank** (or absent) to run the app without any authentication. API calls will have no `Authorization` header.
-- When auth is enabled, the SPA app registration must have `http://localhost:5173` as an allowed redirect URI.
-- Token storage uses `sessionStorage` (cleared when the tab closes). Change `cacheLocation` in `authService.ts` to `'localStorage'` if persistent sessions across tabs are needed.
-- `acquireTokenSilent` is attempted first on every request; it only hits the network if the cached token is near expiry. If interaction is required (e.g. consent), it logs a warning and the request proceeds without a token — the user must navigate to trigger a fresh login via the header "Sign in" button.
-
-### Production auth enforcement — current state (complete)
-
-All infrastructure and application code is wired for production auth enforcement:
-
-1. **API middleware** ✅ — `createAuthMiddleware` in `src/api/src/middleware/auth.ts` validates RS256 Bearer JWTs; enforced when `NODE_ENV=production`.
-2. **Bicep** ✅ — `infra/main.bicep` sets `NODE_ENV=production` + `AZURE_AD_TENANT_ID` + `AZURE_AD_CLIENT_ID` on the API App Service when `AZURE_AD_CLIENT_ID` parameter is non-empty.
-3. **azd parameters** ✅ — `infra/main.parameters.json` binds `AZURE_AD_CLIENT_ID`, `VITE_SPA_CLIENT_ID`, `VITE_API_SCOPE` from `azd env` values.
-4. **Web build** ✅ — Bicep outputs `VITE_AZURE_TENANT_ID`, `VITE_AZURE_CLIENT_ID`, `VITE_AZURE_API_SCOPE`; `azure.yaml` prepackage hook bakes them into the web bundle.
-5. **Token validation** ✅ — `validateToken()` checks `iss`, `aud`, `exp`, `nbf`, and RS256 signature against live Entra ID JWKS.
-
-**Remaining manual steps** (cannot be automated — require Azure Portal access):
-- Create Entra ID App Registrations for the API and SPA
-- Expose `access_as_user` scope on the API app registration
-- Grant the SPA app delegated permission to call the API scope
-- Ensure admin consent is granted in the tenant
-- Set `azd env set AZURE_AD_CLIENT_ID`, `VITE_SPA_CLIENT_ID`, `VITE_API_SCOPE` then run `azd provision`
+Re-introducing authentication (e.g. Firebase Auth / Google Identity) is a future task. It would require a new API-side middleware and replacing or rewiring the frontend MSAL code.
 
 ## Infra + CI
 
-- `infra/main.bicep` is the entry point; `infra/app/*.bicep` holds per-resource AVM modules. Container names in `infra/app/db-avm.bicep` must match `containerNames` in `src/api/src/models/cosmosClient.ts`.
-- API authenticates to Cosmos DB + Key Vault via a user-assigned managed identity (RBAC data-plane role assignment in `cosmos-role-assignment.bicep`). **There are no connection strings at runtime** — avoid introducing any.
-- CI/CD pipelines exist for both GitHub Actions (`.github/workflows/azure-dev.yml`) and Azure DevOps (`.azdo/pipelines/`); configure with `azd pipeline config`.
-- The API App Service `siteConfig.healthCheckPath` is set to `/health` in `main.bicep`. Azure probes this path every minute and replaces instances that fail consistently.
+- There is no infrastructure-as-code yet. Cloud Run service configuration lives in the `gcloud run deploy` flags inside `.github/workflows/gcp-deploy.yml`.
+- The API authenticates to Firestore using the Cloud Run runtime service account via Application Default Credentials — **there are no connection strings or key files at runtime**; avoid introducing any.
+- The GitHub Actions workflow `.github/workflows/gcp-deploy.yml` builds both images, pushes them to Artifact Registry, and deploys to Cloud Run. It authenticates to GCP via Workload Identity Federation.
+- `/health` is the Cloud Run startup/liveness probe path.
+- See `docs/gcp-deployment.md` for the one-time GCP setup and required GitHub variables/secrets.
 
 ## Conventions worth preserving
 
-- API returns `201` + `Location` header on create, `204` on delete, `404` with empty body on missing id, `400 { error, details }` on validation failure, `500 { error: "Internal server error" }` on unexpected errors.
+- API returns `201` + `Location` header on create, `204` on delete, `404` with empty body on missing id, `400 { error, details }` on validation failure, `500 { error: "Internal server error" }` on unexpected errors. 404s from the data layer surface as `null`/`false` from the repository.
 - Validators use an allowlist — if you add a new field to a model, you must also add it to the corresponding `validate*` function or it will be silently dropped on writes.
 - The root-level `openapi.yaml` is a copy of `src/api/openapi.yaml` kept in sync for tooling discovery — update both when changing the API surface.

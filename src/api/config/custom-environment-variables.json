@@ -1,7 +1,7 @@
 {
     "database": {
-        "endpoint": "AZURE_COSMOS_ENDPOINT",
-        "databaseName": "AZURE_COSMOS_DATABASE_NAME"
+        "projectId": "GOOGLE_CLOUD_PROJECT",
+        "databaseId": "FIRESTORE_DATABASE_ID"
     },
     "observability": {
         "connectionString": "APPLICATIONINSIGHTS_CONNECTION_STRING",

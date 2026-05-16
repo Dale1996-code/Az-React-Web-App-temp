@@ -1,5 +1,5 @@
 #!/usr/bin/env pwsh
-# Run this before `azd deploy` to verify the repo is in a deployable state.
+# Run this before deploying to verify the repo is in a deployable state.
 # PowerShell equivalent of preflight.sh — runs on Windows without WSL or Git Bash.
 #
 # Usage:  .\preflight.ps1
@@ -76,9 +76,9 @@ Write-Host "========================================"
 
 if ($anyFailed) {
     Write-Host ""
-    Write-Host "One or more checks FAILED. Fix the issues above before running azd deploy."
+    Write-Host "One or more checks FAILED. Fix the issues above before deploying."
     exit 1
 } else {
     Write-Host ""
-    Write-Host "All checks passed. Safe to run: azd deploy"
+    Write-Host "All checks passed. Safe to deploy."
 }

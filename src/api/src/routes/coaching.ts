@@ -1,12 +1,12 @@
 import { createCrudRouter } from "./createCrudRouter";
 import { BaseRepository, FilterCondition } from "../models/baseRepository";
 import { CoachingRecord } from "../models/coaching";
-import { getContainer } from "../models/cosmosClient";
+import { getStore } from "../models/firestoreClient";
 import { validateCoaching } from "../validation";
 
 // Coaching collection — coaching/feedback records for employees.
 export default createCrudRouter<CoachingRecord>(
-    () => new BaseRepository<CoachingRecord>(getContainer("coaching")),
+    () => new BaseRepository<CoachingRecord>(getStore("coaching")),
     "coaching",
     validateCoaching,
     (query) => {

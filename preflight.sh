@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Run this before `azd deploy` to verify the repo is in a deployable state.
-# Mirrors the steps in .github/workflows/azure-dev.yml that run before provision.
+# Run this before deploying to verify the repo is in a deployable state.
+# Mirrors the build/test steps in .github/workflows/gcp-deploy.yml.
 #
 # Usage: ./preflight.sh
 # Exit code: 0 = all checks passed, 1 = one or more checks failed.
@@ -73,9 +73,9 @@ echo "========================================"
 
 if [ "$PASS" -ne 0 ]; then
   echo ""
-  echo "One or more checks FAILED. Fix the issues above before running azd deploy."
+  echo "One or more checks FAILED. Fix the issues above before deploying."
   exit 1
 else
   echo ""
-  echo "All checks passed. Safe to run: azd deploy"
+  echo "All checks passed. Safe to deploy."
 fi

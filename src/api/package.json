@@ -25,9 +25,7 @@
     ]
   },
   "dependencies": {
-    "@azure/cosmos": "^4.4.1",
-    "@azure/identity": "^4.2.1",
-    "@azure/keyvault-secrets": "^4.7.0",
+    "@google-cloud/firestore": "^7.10.0",
     "applicationinsights": "^2.5.1",
     "config": "^3.3.12",
     "cors": "^2.8.5",

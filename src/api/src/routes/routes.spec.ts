@@ -2,7 +2,7 @@ import request from "supertest";
 import { Server } from "http";
 import { Express } from "express";
 import { createApp } from "../app";
-import { clearMockData } from "../models/cosmosClient";
+import { clearMockData } from "../models/firestoreClient";
 
 /**
  * Integration tests for Dales Operations API routes.

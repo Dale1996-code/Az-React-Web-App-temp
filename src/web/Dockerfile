@@ -10,24 +10,10 @@ WORKDIR /app
 # Required:
 #   VITE_API_BASE_URL — full URL of the API Cloud Run service
 #                       e.g. https://api-xxxxx-uc.a.run.app
-#
-# Optional (leave blank to disable):
-#   VITE_AZURE_CLIENT_ID              — SPA App Registration client ID
-#   VITE_AZURE_TENANT_ID              — Entra ID tenant ID
-#   VITE_AZURE_API_SCOPE              — API scope URI for MSAL token requests
-#   VITE_APPLICATIONINSIGHTS_CONNECTION_STRING — omit for Phase 1
 # ---------------------------------------------------------------------------
 ARG VITE_API_BASE_URL=http://localhost:3100
-ARG VITE_AZURE_CLIENT_ID=
-ARG VITE_AZURE_TENANT_ID=
-ARG VITE_AZURE_API_SCOPE=
-ARG VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=
 
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
-ENV VITE_AZURE_CLIENT_ID=$VITE_AZURE_CLIENT_ID
-ENV VITE_AZURE_TENANT_ID=$VITE_AZURE_TENANT_ID
-ENV VITE_AZURE_API_SCOPE=$VITE_AZURE_API_SCOPE
-ENV VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=$VITE_APPLICATIONINSIGHTS_CONNECTION_STRING
 
 COPY . .
 

@@ -7,7 +7,7 @@ import { IssueLog } from "../models/issue";
 import { CoachingRecord } from "../models/coaching";
 import { ProductivityRecord } from "../models/productivity";
 import { DailySummary } from "../models/summary";
-import { getContainer } from "../models/cosmosClient";
+import { getStore } from "../models/firestoreClient";
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -26,12 +26,12 @@ router.get("/", async (req, res) => {
         : new Date().toISOString().slice(0, 10);
 
     try {
-        const taskRepo        = new BaseRepository<Task>(getContainer("tasks"));
-        const issueRepo       = new BaseRepository<IssueLog>(getContainer("issues"));
-        const coachingRepo    = new BaseRepository<CoachingRecord>(getContainer("coaching"));
-        const employeeRepo    = new BaseRepository<Employee>(getContainer("employees"));
-        const productivityRepo = new BaseRepository<ProductivityRecord>(getContainer("productivity"));
-        const summaryRepo     = new BaseRepository<DailySummary>(getContainer("summaries"));
+        const taskRepo        = new BaseRepository<Task>(getStore("tasks"));
+        const issueRepo       = new BaseRepository<IssueLog>(getStore("issues"));
+        const coachingRepo    = new BaseRepository<CoachingRecord>(getStore("coaching"));
+        const employeeRepo    = new BaseRepository<Employee>(getStore("employees"));
+        const productivityRepo = new BaseRepository<ProductivityRecord>(getStore("productivity"));
+        const summaryRepo     = new BaseRepository<DailySummary>(getStore("summaries"));
 
         // ── Conditions reused across queries ──────────────────────────────
         const openIssueConds: FilterCondition[] = [

@@ -1,7 +1,4 @@
 import { defineConfig, devices } from "@playwright/test";
-import fs from "fs";
-import { join } from "path";
-import dotenv from "dotenv";
 
 /**
  * See https://playwright.dev/docs/test-configuration.
@@ -43,32 +40,7 @@ export default defineConfig({
 });
 
 function getBaseURL() {
-  // If we don't have URL and aren't in CI, then try to load from environment
-  if (!process.env.REACT_APP_WEB_BASE_URL && !process.env.CI) {
-    // Try to get env in .azure folder
-    let environment = process.env.AZURE_ENV_NAME;
-    if (!environment) {
-      // Couldn't find env name in env var, let's try to load from .azure folder
-      try {
-        let configfilePath = join(__dirname, "..", ".azure", "config.json");
-        if (fs.existsSync(configfilePath)) {
-          let configFile = JSON.parse(fs.readFileSync(configfilePath, "utf-8"));
-          environment = configFile["defaultEnvironment"];
-        }
-      } catch (err) {
-        console.log("Unable to load default environment: " + err);
-      }
-    }
-
-    if (environment) {
-      let envPath = join(__dirname, "..", ".azure", environment, ".env");
-      console.log("Loading env from: " + envPath);
-      dotenv.config({ path: envPath });
-      return process.env.REACT_APP_WEB_BASE_URL;
-    }
-  }
-
-  let baseURL = process.env.REACT_APP_WEB_BASE_URL || "http://localhost:5173";
+  const baseURL = process.env.REACT_APP_WEB_BASE_URL || "http://localhost:5173";
   console.log("baseUrl: " + baseURL);
   return baseURL;
 }

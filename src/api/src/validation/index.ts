@@ -5,7 +5,7 @@
  *   - No external validation library — plain TypeScript keeps it beginner-friendly.
  *   - Allowlist approach: only known fields are forwarded to the repository.
  *     Unknown fields are silently stripped (not rejected), preventing surprise
- *     data from leaking into Cosmos DB.
+ *     data from leaking into the database.
  *   - Required-field checks only apply on CREATE (isUpdate=false).
  *     On UPDATE, callers may omit any field; only fields present in the body
  *     are validated for format/enum correctness.
