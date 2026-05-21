@@ -10,9 +10,8 @@ import productivity from "./routes/productivity";
 import coaching from "./routes/coaching";
 import issues from "./routes/issues";
 import summaries from "./routes/summaries";
-import { configureCosmos } from "./models/cosmosClient";
+import { configureFirestore } from "./models/firestoreClient";
 import { observability, logger } from "./config/observability";
-import { createAuthMiddleware } from "./middleware/auth";
 
 // Use API_ALLOW_ORIGINS env var with comma separated urls like
 // `http://localhost:3000, http://otherurl:100`
@@ -52,7 +51,7 @@ export const createApp = async (): Promise<Express> => {
 
     // Configuration
     observability(config.observability);
-    await configureCosmos(config.database);
+    await configureFirestore(config.database);
 
     logger.info(
         `API initialised – env=${process.env.NODE_ENV ?? "production"} ` +
@@ -65,25 +64,22 @@ export const createApp = async (): Promise<Express> => {
         origin: originList()
     }));
 
-    // Health-check endpoint — no auth required; used by Azure deployment probes.
+    // Health-check endpoint — used by Cloud Run startup/liveness probes.
     app.get("/health", (_req, res) => {
         res.json({ status: "ok", timestamp: new Date().toISOString(), env: process.env.NODE_ENV ?? "production" });
     });
 
-    // Auth middleware — bypassed automatically when NODE_ENV !== "production".
-    // See src/api/src/middleware/auth.ts for behaviour details.
-    const requireAuth = createAuthMiddleware(config.auth);
-
-    // Dales Operations API routes — auth required on every business endpoint.
-    // These must be registered before Swagger UI; swagger-ui-express setup()
-    // never calls next(), so any route mounted after it is unreachable.
-    app.use("/dashboard", requireAuth, dashboard);
-    app.use("/employees", requireAuth, employees);
-    app.use("/tasks", requireAuth, tasks);
-    app.use("/productivity", requireAuth, productivity);
-    app.use("/coaching", requireAuth, coaching);
-    app.use("/issues", requireAuth, issues);
-    app.use("/summaries", requireAuth, summaries);
+    // Dales Operations API routes. Authentication is currently disabled — the
+    // endpoints are open. These must be registered before Swagger UI;
+    // swagger-ui-express setup() never calls next(), so any route mounted
+    // after it is unreachable.
+    app.use("/dashboard", dashboard);
+    app.use("/employees", employees);
+    app.use("/tasks", tasks);
+    app.use("/productivity", productivity);
+    app.use("/coaching", coaching);
+    app.use("/issues", issues);
+    app.use("/summaries", summaries);
 
     // Swagger UI — open without auth so the spec remains browsable for support/tooling.
     // Business data is not exposed by the spec itself.

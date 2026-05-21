@@ -1,10 +1,10 @@
-import { Container, SqlParameter } from "@azure/cosmos";
 import { v4 as uuidv4 } from "uuid";
+import { DocStore, DocRecord } from "./firestoreClient";
 
 export interface BaseEntity {
     id: string;
-    createdDate?: Date;
-    updatedDate?: Date;
+    createdDate?: string;
+    updatedDate?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -13,8 +13,9 @@ export interface BaseEntity {
 
 /**
  * A single WHERE condition used by findWhere() and countWhere().
- * Using a structured value (not raw SQL) lets the in-memory test path and
- * the Cosmos SQL production path share the same filter definition.
+ * Filtering is evaluated in-memory after fetching the collection — Firestore
+ * has no case-insensitive or substring query support, and the Dales
+ * Operations collections are small enough that a full read is acceptable.
  */
 export type FilterCondition =
     | { op: "eq";          field: string; value: unknown }
@@ -36,70 +37,7 @@ export interface FindSpec {
 }
 
 // ---------------------------------------------------------------------------
-// Cosmos SQL builder — used only in production (NODE_ENV !== "test")
-// ---------------------------------------------------------------------------
-
-type ParamAcc = { params: SqlParameter[]; idx: number };
-
-function condToSql(cond: FilterCondition, acc: ParamAcc): string {
-    const add = (value: unknown): string => {
-        const name = `@p${acc.idx++}`;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        acc.params.push({ name, value: value as any });
-        return name;
-    };
-    switch (cond.op) {
-    case "eq":   return `c.${cond.field} = ${add(cond.value)}`;
-    case "neq":  return `c.${cond.field} != ${add(cond.value)}`;
-    case "lt":   return `c.${cond.field} < ${add(cond.value)}`;
-    case "lte":  return `c.${cond.field} <= ${add(cond.value)}`;
-    case "gt":   return `c.${cond.field} > ${add(cond.value)}`;
-    case "gte":  return `c.${cond.field} >= ${add(cond.value)}`;
-    case "eq_ci": {
-        const p = add(cond.value.toLowerCase());
-        return `LOWER(c.${cond.field}) = ${p}`;
-    }
-    case "contains_ci": {
-        const p = add(cond.value.toLowerCase());
-        return `CONTAINS(LOWER(c.${cond.field}), ${p})`;
-    }
-    case "is_defined":
-        return `(IS_DEFINED(c.${cond.field}) AND NOT IS_NULL(c.${cond.field}))`;
-    case "or": {
-        const parts = cond.conditions.map(c => condToSql(c, acc));
-        return `(${parts.join(" OR ")})`;
-    }
-    }
-}
-
-function buildSelectSql(spec: FindSpec): { query: string; parameters: SqlParameter[] } {
-    const acc: ParamAcc = { params: [], idx: 0 };
-    const conditions = spec.conditions ?? [];
-    const where = conditions.length > 0
-        ? `WHERE ${conditions.map(c => condToSql(c, acc)).join(" AND ")}`
-        : "";
-    const orderBy = spec.orderBy
-        ? `ORDER BY c.${spec.orderBy.field} ${spec.orderBy.desc ? "DESC" : "ASC"}`
-        : "";
-    const top = spec.top ?? 100;
-    const skip = spec.skip ?? 0;
-    // OFFSET/LIMIT do not accept parameters — embed integers directly.
-    const parts = ["SELECT * FROM c", where, orderBy, `OFFSET ${skip} LIMIT ${top}`]
-        .filter(Boolean);
-    return { query: parts.join(" "), parameters: acc.params };
-}
-
-function buildCountSql(conditions: FilterCondition[]): { query: string; parameters: SqlParameter[] } {
-    const acc: ParamAcc = { params: [], idx: 0 };
-    const where = conditions.length > 0
-        ? `WHERE ${conditions.map(c => condToSql(c, acc)).join(" AND ")}`
-        : "";
-    const parts = ["SELECT VALUE COUNT(1) FROM c", where].filter(Boolean);
-    return { query: parts.join(" "), parameters: acc.params };
-}
-
-// ---------------------------------------------------------------------------
-// In-memory evaluator — used only when NODE_ENV === "test"
+// In-memory query evaluator
 // ---------------------------------------------------------------------------
 
 function evalCond(item: Record<string, unknown>, cond: FilterCondition): boolean {
@@ -147,108 +85,64 @@ function applySpec<T>(items: T[], spec: FindSpec): T[] {
 // ---------------------------------------------------------------------------
 
 /**
- * Generic CRUD repository on top of a Cosmos DB container.
- * Each domain (employees, tasks, etc.) gets its own instance pointed at its container.
- *
- * findWhere() and countWhere() use parameterized Cosmos queries in production and
- * an in-memory evaluator in test mode — no real database is needed for tests.
+ * Generic CRUD repository on top of a DocStore (Firestore in production,
+ * in-memory in tests). Each domain (employees, tasks, etc.) gets its own
+ * instance pointed at its collection.
  */
 export class BaseRepository<T extends BaseEntity> {
-    constructor(private container: Container) {}
+    constructor(private store: DocStore) {}
 
-    /** Returns all items with no server-side filtering. Prefer findWhere() for list endpoints. */
+    /** Returns all items with no filtering. Prefer findWhere() for list endpoints. */
     async findAll(): Promise<T[]> {
-        const { resources } = await this.container.items.readAll<T>().fetchAll();
-        return resources;
+        return (await this.store.getAll()) as unknown as T[];
     }
 
-    /**
-     * Returns a filtered, sorted, paginated slice using a Cosmos parameterized query
-     * in production, or an in-memory filter in test mode.
-     */
+    /** Returns a filtered, sorted, paginated slice of the collection. */
     async findWhere(spec: FindSpec): Promise<T[]> {
-        if (process.env.NODE_ENV === "test") {
-            const { resources } = await this.container.items.readAll<T>().fetchAll();
-            return applySpec(resources, spec);
-        }
-        const { query, parameters } = buildSelectSql(spec);
-        const { resources } = await this.container.items.query<T>({ query, parameters }).fetchAll();
-        return resources;
+        const all = await this.store.getAll();
+        return applySpec(all, spec) as unknown as T[];
     }
 
-    /**
-     * Returns the count of items matching the given conditions using
-     * `SELECT VALUE COUNT(1) FROM c WHERE ...` in production, or an in-memory
-     * count in test mode.
-     */
+    /** Returns the count of items matching the given conditions. */
     async countWhere(conditions: FilterCondition[]): Promise<number> {
-        if (process.env.NODE_ENV === "test") {
-            const { resources } = await this.container.items.readAll<Record<string, unknown>>().fetchAll();
-            return resources.filter(item =>
-                conditions.every(c => evalCond(item as Record<string, unknown>, c))
-            ).length;
-        }
-        const { query, parameters } = buildCountSql(conditions);
-        const { resources } = await this.container.items.query<number>({ query, parameters }).fetchAll();
-        return resources[0] ?? 0;
+        const all = await this.store.getAll();
+        return all.filter(item => conditions.every(c => evalCond(item, c))).length;
     }
 
     async findById(id: string): Promise<T | null> {
-        try {
-            const { resource } = await this.container.item(id, id).read<T>();
-            return resource ?? null;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (error: any) {
-            if (error.code === 404) {
-                return null;
-            }
-            throw error;
-        }
+        return (await this.store.get(id)) as unknown as T | null;
     }
 
     async create(data: Partial<T>): Promise<T> {
-        const now = new Date();
-        const newEntity = {
-            ...data,
-            id: uuidv4(),
+        const now = new Date().toISOString();
+        const id = uuidv4();
+        const newEntity: DocRecord = {
+            ...(data as Record<string, unknown>),
+            id,
             createdDate: now,
             updatedDate: now,
-        } as T;
-
-        const { resource } = await this.container.items.create(newEntity);
-        if (!resource) {
-            throw new Error("Failed to create entity");
-        }
-        return resource as T;
+        };
+        await this.store.set(id, newEntity);
+        return newEntity as unknown as T;
     }
 
     async update(id: string, data: Partial<T>): Promise<T | null> {
-        const existing = await this.findById(id);
+        const existing = await this.store.get(id);
         if (!existing) {
             return null;
         }
 
-        const updated = {
+        const updated: DocRecord = {
             ...existing,
-            ...data,
+            ...(data as Record<string, unknown>),
             id, // never let the caller change the id
-            updatedDate: new Date(),
-        } as T;
-
-        const { resource } = await this.container.item(id, id).replace(updated);
-        return (resource as T) ?? null;
+            updatedDate: new Date().toISOString(),
+        };
+        await this.store.set(id, updated);
+        return updated as unknown as T;
     }
 
     async delete(id: string): Promise<boolean> {
-        try {
-            await this.container.item(id, id).delete();
-            return true;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (error: any) {
-            if (error.code === 404) {
-                return false;
-            }
-            throw error;
-        }
+        return this.store.delete(id);
     }
 }

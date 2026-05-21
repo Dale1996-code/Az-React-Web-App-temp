@@ -2,7 +2,11 @@ import https from "https";
 import { createPublicKey, createVerify, JsonWebKey } from "crypto";
 import { Request, Response, NextFunction, RequestHandler } from "express";
 import { logger } from "../config/observability";
-import { AuthConfig } from "../config/appConfig";
+
+interface AuthConfig {
+    tenantId: string;
+    clientId: string;
+}
 
 // ---------------------------------------------------------------------------
 // Minimal Azure Entra ID JWT validation using Node.js built-in crypto only.

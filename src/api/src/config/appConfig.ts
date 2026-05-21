@@ -4,17 +4,11 @@ export interface ObservabilityConfig {
 }
 
 export interface DatabaseConfig {
-    endpoint: string
-    databaseName: string
-}
-
-export interface AuthConfig {
-    tenantId: string
-    clientId: string
+    projectId: string
+    databaseId: string
 }
 
 export interface AppConfig {
     observability: ObservabilityConfig
     database: DatabaseConfig
-    auth: AuthConfig
 }
