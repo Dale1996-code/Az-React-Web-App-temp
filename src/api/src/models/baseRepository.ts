@@ -127,19 +127,14 @@ export class BaseRepository<T extends BaseEntity> {
     }
 
     async update(id: string, data: Partial<T>): Promise<T | null> {
-        const existing = await this.store.get(id);
-        if (!existing) {
-            return null;
-        }
-
-        const updated: DocRecord = {
-            ...existing,
+        const patchData: Partial<DocRecord> = {
             ...(data as Record<string, unknown>),
             id, // never let the caller change the id
             updatedDate: new Date().toISOString(),
         };
-        await this.store.set(id, updated);
-        return updated as unknown as T;
+        const found = await this.store.patch(id, patchData);
+        if (!found) return null;
+        return (await this.store.get(id)) as unknown as T;
     }
 
     async delete(id: string): Promise<boolean> {

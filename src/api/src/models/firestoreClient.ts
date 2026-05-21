@@ -39,6 +39,8 @@ export interface DocStore {
     getAll(): Promise<DocRecord[]>;
     get(id: string): Promise<DocRecord | null>;
     set(id: string, data: DocRecord): Promise<void>;
+    /** Atomically applies a partial update. Returns false if the document does not exist. */
+    patch(id: string, data: Partial<DocRecord>): Promise<boolean>;
     delete(id: string): Promise<boolean>;
 }
 
@@ -96,6 +98,18 @@ class FirestoreDocStore implements DocStore {
         await this.collection.doc(id).set(data);
     }
 
+    async patch(id: string, data: Partial<DocRecord>): Promise<boolean> {
+        try {
+            await this.collection.doc(id).update(data as Record<string, unknown>);
+            return true;
+        } catch (e) {
+            if ((e as { code?: number }).code === 5) {
+                return false;
+            }
+            throw e;
+        }
+    }
+
     async delete(id: string): Promise<boolean> {
         const ref = this.collection.doc(id);
         const doc = await ref.get();
@@ -126,6 +140,13 @@ class InMemoryDocStore implements DocStore {
 
     async set(id: string, data: DocRecord): Promise<void> {
         this.store.set(id, data);
+    }
+
+    async patch(id: string, data: Partial<DocRecord>): Promise<boolean> {
+        const existing = this.store.get(id);
+        if (!existing) return false;
+        this.store.set(id, { ...existing, ...data });
+        return true;
     }
 
     async delete(id: string): Promise<boolean> {
