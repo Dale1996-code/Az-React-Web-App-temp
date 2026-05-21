@@ -1,4 +1,4 @@
-# Google Cloud Run deployment — Phase 2 of the Azure → GCP migration.
+# Google Cloud Run deployment.
 #
 # This workflow builds Docker images for the API and web services, pushes them
 # to Google Artifact Registry, deploys both services to Cloud Run, and runs
@@ -8,12 +8,12 @@
 # All configuration values come from GitHub Actions repository variables and
 # secrets — no real project IDs, URLs, or credentials are hardcoded here.
 #
+# The API uses Google Cloud Firestore (native mode) for data storage; it
+# authenticates via the Cloud Run service account (Application Default
+# Credentials — no key files needed).
+#
 # See docs/gcp-deployment.md for the full setup guide, including the list of
 # required GitHub variables/secrets and the manual GCP console steps.
-#
-# IMPORTANT: This workflow assumes the database is still Azure Cosmos DB and
-# that authentication is still Entra ID / MSAL. Those migrations happen in
-# later phases.
 
 name: Deploy to Google Cloud Run
 
@@ -48,10 +48,6 @@ jobs:
       GCP_ARTIFACT_REPO: ${{ vars.GCP_ARTIFACT_REPO }}
       API_SERVICE_NAME: ${{ vars.GCP_API_SERVICE_NAME }}
       WEB_SERVICE_NAME: ${{ vars.GCP_WEB_SERVICE_NAME }}
-      # Cosmos DB key is loaded from Secret Manager. Default secret name is
-      # `cosmos-db-key`; override with the GCP_COSMOS_KEY_SECRET variable if you
-      # named the secret differently.
-      GCP_COSMOS_KEY_SECRET: ${{ vars.GCP_COSMOS_KEY_SECRET || 'cosmos-db-key' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -162,7 +158,7 @@ jobs:
       - name: Deploy API to Cloud Run
         # Cloud Run injects PORT=8080 automatically; the API reads process.env.PORT.
         # API_ALLOW_ORIGINS is updated later, after the web URL is known.
-        # AZURE_COSMOS_KEY is loaded from Secret Manager — never set inline.
+        # Firestore auth uses the Cloud Run service account (ADC) — no key secrets needed.
         run: |
           gcloud run deploy "${API_SERVICE_NAME}" \
             --project "${GCP_PROJECT_ID}" \
@@ -173,11 +169,8 @@ jobs:
             --port 8080 \
             --quiet \
             --set-env-vars "NODE_ENV=production" \
-            --set-env-vars "AZURE_COSMOS_ENDPOINT=${{ vars.AZURE_COSMOS_ENDPOINT }}" \
-            --set-env-vars "AZURE_COSMOS_DATABASE_NAME=${{ vars.AZURE_COSMOS_DATABASE_NAME }}" \
-            --set-env-vars "AZURE_AD_TENANT_ID=${{ vars.AZURE_AD_TENANT_ID }}" \
-            --set-env-vars "AZURE_AD_CLIENT_ID=${{ vars.AZURE_AD_CLIENT_ID }}" \
-            --set-secrets "AZURE_COSMOS_KEY=${GCP_COSMOS_KEY_SECRET}:latest"
+            --set-env-vars "GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }}" \
+            --set-env-vars "FIRESTORE_DATABASE_ID=${{ vars.FIRESTORE_DATABASE_ID }}"
 
       - name: Read API service URL
         id: api-url
@@ -195,14 +188,11 @@ jobs:
 
       - name: Build and push web image
         # VITE_* values are baked into the static bundle at docker build time.
-        # They become part of the JavaScript shipped to browsers, so we never
-        # pass true secrets here — only public client/tenant IDs.
+        # VITE_API_BASE_URL is the only required build arg; MSAL auth vars are
+        # optional — leave them unset to run the app without authentication.
         run: |
           docker build \
             --build-arg "VITE_API_BASE_URL=${{ steps.api-url.outputs.url }}" \
-            --build-arg "VITE_AZURE_CLIENT_ID=${{ vars.VITE_AZURE_CLIENT_ID }}" \
-            --build-arg "VITE_AZURE_TENANT_ID=${{ vars.VITE_AZURE_TENANT_ID }}" \
-            --build-arg "VITE_AZURE_API_SCOPE=${{ vars.VITE_AZURE_API_SCOPE }}" \
             -t "${{ steps.tags.outputs.web_image_sha }}" \
             -t "${{ steps.tags.outputs.web_image_latest }}" \
             ./src/web
@@ -259,18 +249,11 @@ jobs:
           npx playwright install --with-deps chromium
 
       - name: Run smoke tests against deployed Cloud Run URLs
-        # Mirrors the Azure smoke step. The optional SMOKE_AZURE_* secrets
-        # enable the authenticated dashboard check; without them, the auth
-        # case is skipped (non-blocking) and a reason is shown in the report.
         working-directory: tests
         env:
           REACT_APP_WEB_BASE_URL: ${{ steps.web-url.outputs.url }}
           REACT_APP_API_BASE_URL: ${{ steps.api-url.outputs.url }}
           CI: "true"
-          SMOKE_AZURE_TENANT_ID: ${{ secrets.SMOKE_AZURE_TENANT_ID }}
-          SMOKE_AZURE_CLIENT_ID: ${{ secrets.SMOKE_AZURE_CLIENT_ID }}
-          SMOKE_AZURE_CLIENT_SECRET: ${{ secrets.SMOKE_AZURE_CLIENT_SECRET }}
-          SMOKE_AZURE_API_SCOPE: ${{ secrets.SMOKE_AZURE_API_SCOPE }}
         run: npx playwright test
 
       - name: Upload Playwright report

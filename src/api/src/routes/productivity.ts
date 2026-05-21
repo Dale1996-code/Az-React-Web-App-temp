@@ -1,12 +1,12 @@
 import { createCrudRouter } from "./createCrudRouter";
 import { BaseRepository, FilterCondition } from "../models/baseRepository";
 import { ProductivityRecord } from "../models/productivity";
-import { getContainer } from "../models/cosmosClient";
+import { getStore } from "../models/firestoreClient";
 import { validateProductivity } from "../validation";
 
 // Productivity collection — daily productivity entries per employee.
 export default createCrudRouter<ProductivityRecord>(
-    () => new BaseRepository<ProductivityRecord>(getContainer("productivity")),
+    () => new BaseRepository<ProductivityRecord>(getStore("productivity")),
     "productivity",
     validateProductivity,
     (query) => {

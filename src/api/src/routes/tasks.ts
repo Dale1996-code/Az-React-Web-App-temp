@@ -1,12 +1,12 @@
 import { createCrudRouter } from "./createCrudRouter";
 import { BaseRepository, FilterCondition } from "../models/baseRepository";
 import { Task } from "../models/task";
-import { getContainer } from "../models/cosmosClient";
+import { getStore } from "../models/firestoreClient";
 import { validateTask } from "../validation";
 
 // Tasks collection — daily tasks tracked during a shift.
 export default createCrudRouter<Task>(
-    () => new BaseRepository<Task>(getContainer("tasks")),
+    () => new BaseRepository<Task>(getStore("tasks")),
     "tasks",
     validateTask,
     (query) => {

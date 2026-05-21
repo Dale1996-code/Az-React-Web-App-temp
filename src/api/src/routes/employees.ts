@@ -1,12 +1,12 @@
 import { createCrudRouter } from "./createCrudRouter";
 import { BaseRepository, FilterCondition } from "../models/baseRepository";
 import { Employee } from "../models/employee";
-import { getContainer } from "../models/cosmosClient";
+import { getStore } from "../models/firestoreClient";
 import { validateEmployee } from "../validation";
 
 // Employees collection — stores shift roster profiles.
 export default createCrudRouter<Employee>(
-    () => new BaseRepository<Employee>(getContainer("employees")),
+    () => new BaseRepository<Employee>(getStore("employees")),
     "employees",
     validateEmployee,
     (query) => {
