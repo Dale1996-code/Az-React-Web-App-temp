@@ -159,7 +159,23 @@ jobs:
         # Cloud Run injects PORT=8080 automatically; the API reads process.env.PORT.
         # API_ALLOW_ORIGINS is updated later, after the web URL is known.
         # Firestore auth uses the Cloud Run service account (ADC) — no key secrets needed.
+        #
+        # Optional cache tier (Memorystore for Redis): set the GCP_VPC_CONNECTOR
+        # and REDIS_URL repository variables to give the API a Redis cache.
+        # Memorystore is reachable only on a private IP, so a Serverless VPC
+        # Access connector is required. Leaving both unset deploys the API with
+        # no cache — the dashboard route falls back to direct Firestore reads.
+        env:
+          VPC_CONNECTOR: ${{ vars.GCP_VPC_CONNECTOR }}
+          REDIS_URL: ${{ vars.REDIS_URL }}
         run: |
+          EXTRA_ARGS=()
+          if [ -n "$VPC_CONNECTOR" ]; then
+            EXTRA_ARGS+=(--vpc-connector "$VPC_CONNECTOR" --vpc-egress private-ranges-only)
+          fi
+          if [ -n "$REDIS_URL" ]; then
+            EXTRA_ARGS+=(--set-env-vars "REDIS_URL=${REDIS_URL}")
+          fi
           gcloud run deploy "${API_SERVICE_NAME}" \
             --project "${GCP_PROJECT_ID}" \
             --region "${GCP_REGION}" \
@@ -170,7 +186,8 @@ jobs:
             --quiet \
             --set-env-vars "NODE_ENV=production" \
             --set-env-vars "GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }}" \
-            --set-env-vars "FIRESTORE_DATABASE_ID=${{ vars.FIRESTORE_DATABASE_ID }}"
+            --set-env-vars "FIRESTORE_DATABASE_ID=${{ vars.FIRESTORE_DATABASE_ID }}" \
+            "${EXTRA_ARGS[@]}"
 
       - name: Read API service URL
         id: api-url

@@ -11,6 +11,7 @@ import coaching from "./routes/coaching";
 import issues from "./routes/issues";
 import summaries from "./routes/summaries";
 import { configureFirestore } from "./models/firestoreClient";
+import { configureCache } from "./models/cache";
 import { observability, logger } from "./config/observability";
 
 // Use API_ALLOW_ORIGINS env var with comma separated urls like
@@ -52,6 +53,7 @@ export const createApp = async (): Promise<Express> => {
     // Configuration
     observability(config.observability);
     await configureFirestore(config.database);
+    await configureCache(config.cache);
 
     logger.info(
         `API initialised – env=${process.env.NODE_ENV ?? "production"} ` +
