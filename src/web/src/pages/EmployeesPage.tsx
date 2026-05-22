@@ -264,6 +264,12 @@ const EmployeesPage: FC = (): ReactElement => {
         load();
     }, [load]);
 
+    // Clear any pending search debounce when the page unmounts so it does not
+    // fire load() (and setState) after unmount.
+    useEffect(() => () => {
+        if (searchTimer.current) clearTimeout(searchTimer.current);
+    }, []);
+
     // ── Search with debounce ───────────────────────────────────────────────────
 
     const handleSearchChange = (_: unknown, value?: string) => {
