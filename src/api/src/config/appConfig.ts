@@ -8,7 +8,12 @@ export interface DatabaseConfig {
     databaseId: string
 }
 
+export interface CacheConfig {
+    redisUrl: string
+}
+
 export interface AppConfig {
     observability: ObservabilityConfig
     database: DatabaseConfig
+    cache: CacheConfig
 }

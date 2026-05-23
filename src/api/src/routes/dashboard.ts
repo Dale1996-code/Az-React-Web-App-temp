@@ -8,8 +8,14 @@ import { CoachingRecord } from "../models/coaching";
 import { ProductivityRecord } from "../models/productivity";
 import { DailySummary } from "../models/summary";
 import { getStore } from "../models/firestoreClient";
+import { cacheGet, cacheSet } from "../models/cache";
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// The dashboard aggregates eight collection queries; it is the app landing
+// page and tolerates slight staleness, so it is cached briefly when a Redis
+// cache is configured. Without REDIS_URL the cache calls are no-ops.
+const CACHE_TTL_SECONDS = 60;
 
 const router: Router = express.Router();
 
@@ -25,7 +31,15 @@ router.get("/", async (req, res) => {
         ? rawDate
         : new Date().toISOString().slice(0, 10);
 
+    const cacheKey = `dashboard:${date}`;
+
     try {
+        const cached = await cacheGet<Record<string, unknown>>(cacheKey);
+        if (cached) {
+            res.json(cached);
+            return;
+        }
+
         const taskRepo        = new BaseRepository<Task>(getStore("tasks"));
         const issueRepo       = new BaseRepository<IssueLog>(getStore("issues"));
         const coachingRepo    = new BaseRepository<CoachingRecord>(getStore("coaching"));
@@ -151,7 +165,7 @@ router.get("/", async (req, res) => {
             }
             : null;
 
-        res.json({
+        const payload = {
             date,
             taskCounts,
             urgentTasks,
@@ -162,7 +176,10 @@ router.get("/", async (req, res) => {
             activeEmployeesCount,
             productivitySnapshot,
             latestSummary,
-        });
+        };
+
+        await cacheSet(cacheKey, payload, CACHE_TTL_SECONDS);
+        res.json(payload);
     } catch (err) {
         logger.error(`[dashboard] GET /dashboard?date=${date} 500 – ${err instanceof Error ? err.message : String(err)}`);
         res.status(500).json({ error: "Internal server error" });

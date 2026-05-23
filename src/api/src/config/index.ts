@@ -1,4 +1,4 @@
-import { AppConfig, DatabaseConfig, ObservabilityConfig } from "./appConfig";
+import { AppConfig, CacheConfig, DatabaseConfig, ObservabilityConfig } from "./appConfig";
 import dotenv from "dotenv";
 import { logger } from "../config/observability";
 import { IConfig } from "config";
@@ -13,6 +13,7 @@ export const getConfig: () => Promise<AppConfig> = async () => {
     const config: IConfig = require("config") as IConfig;
     const databaseConfig = config.get<DatabaseConfig>("database");
     const observabilityConfig = config.get<ObservabilityConfig>("observability");
+    const cacheConfig = config.get<CacheConfig>("cache");
 
     const appConfig: AppConfig = {
         observability: {
@@ -22,6 +23,9 @@ export const getConfig: () => Promise<AppConfig> = async () => {
         database: {
             projectId: databaseConfig.projectId,
             databaseId: databaseConfig.databaseId,
+        },
+        cache: {
+            redisUrl: cacheConfig.redisUrl,
         },
     };
 

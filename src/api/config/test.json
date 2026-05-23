@@ -6,5 +6,8 @@
     "observability": {
         "connectionString": "",
         "roleName": "API"
+    },
+    "cache": {
+        "redisUrl": ""
     }
 }

@@ -173,6 +173,27 @@ in this workflow because they identify the deployment principal).
 |---|---|---|
 | `GCP_COSMOS_KEY_SECRET` | `cosmos-db-key` | Secret Manager secret name for the Cosmos primary key |
 | `API_ALLOW_ORIGINS_EXTRA` | *(none)* | Comma-separated list of additional CORS origins (e.g. a custom domain) |
+| `GCP_VPC_CONNECTOR` | *(none)* | Serverless VPC Access connector name. Required only to enable the optional Redis cache tier — see below. |
+| `REDIS_URL` | *(none)* | Redis connection URL for the optional dashboard cache, e.g. `redis://10.0.0.3:6379`. Ignored unless `GCP_VPC_CONNECTOR` is also set. |
+
+### Optional cache tier (Memorystore for Redis)
+
+The API can put a short-lived Redis cache in front of the `/dashboard`
+aggregation — the pattern used by the Google Cloud "Three-tier web app" Jump
+Start Solution. It is entirely optional: with neither variable set, the API
+deploys exactly as before and the dashboard reads straight from Firestore.
+
+To enable it:
+
+1. Create a Memorystore for Redis instance in the same region and VPC.
+2. Create a Serverless VPC Access connector (Memorystore is reachable only on a
+   private IP, so Cloud Run needs the connector to talk to it).
+3. Set the `GCP_VPC_CONNECTOR` variable to the connector name and `REDIS_URL`
+   to `redis://<instance-host>:<port>`.
+
+The deploy workflow then adds `--vpc-connector` and `REDIS_URL` to the API
+Cloud Run service. The cache uses a 60-second TTL and fails soft — if Redis is
+unreachable, the dashboard transparently falls back to Firestore.
 
 ### Required Secrets
 

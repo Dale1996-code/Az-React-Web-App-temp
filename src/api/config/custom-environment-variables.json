@@ -6,5 +6,8 @@
     "observability": {
         "connectionString": "APPLICATIONINSIGHTS_CONNECTION_STRING",
         "roleName": "APPLICATIONINSIGHTS_ROLE_NAME"
+    },
+    "cache": {
+        "redisUrl": "REDIS_URL"
     }
 }
