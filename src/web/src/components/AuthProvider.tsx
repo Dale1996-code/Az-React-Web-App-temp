@@ -47,7 +47,7 @@ const MsalBridge: FC<PropsWithChildren> = ({ children }) => {
         account: accounts[0] ?? null,
         authEnabled: true,
         login: () => instance.loginRedirect(loginRequest).catch(console.error),
-        logout: () => instance.logoutRedirect({ postLogoutRedirectUri: '/' }).catch(console.error),
+        logout: () => instance.logoutRedirect({ postLogoutRedirectUri: window.location.origin }).catch(console.error),
     };
 
     const isAuthenticated = inProgress === InteractionStatus.None && accounts.length > 0;

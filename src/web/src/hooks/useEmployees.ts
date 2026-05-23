@@ -10,9 +10,11 @@ export function useEmployees() {
     const [loadingEmployees, setLoadingEmployees] = useState(false);
 
     useEffect(() => {
+        let active = true;
         setLoadingEmployees(true);
         getEmployees({ active: true })
             .then(list => {
+                if (!active) return;
                 const map = new Map<string, Employee>();
                 const opts: IDropdownOption[] = [];
                 list.forEach(emp => {
@@ -30,8 +32,13 @@ export function useEmployees() {
                 // Non-fatal — names/dropdowns fall back gracefully
             })
             .finally(() => {
-                setLoadingEmployees(false);
+                if (active) {
+                    setLoadingEmployees(false);
+                }
             });
+        return () => {
+            active = false;
+        };
     }, []);
 
     return { employees, employeeMap, employeeOptions, loadingEmployees };

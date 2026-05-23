@@ -1,4 +1,4 @@
-import { FC, ReactElement, useCallback, useEffect, useRef, useState } from 'react';
+import { FC, ReactElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     DefaultButton,
     Dropdown,
@@ -323,8 +323,11 @@ const TasksPage: FC = (): ReactElement => {
     const { employees, employeeOptions, loadingEmployees } = useEmployees();
     const { toastMessage, showToast } = useToast();
 
-    const employeeNameMap = new Map<string, string>(
-        employees.map(e => [e.id, `${e.firstName} ${e.lastName}`])
+    const employeeNameMap = useMemo(
+        () => new Map<string, string>(
+            employees.map(e => [e.id, `${e.firstName} ${e.lastName}`])
+        ),
+        [employees],
     );
 
     const {
@@ -368,6 +371,12 @@ const TasksPage: FC = (): ReactElement => {
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => { load(currentQuery()); }, [filterStatus]);
+
+    // Clear any pending department-filter debounce when the page unmounts so it
+    // does not fire load() (and setState) after unmount.
+    useEffect(() => () => {
+        if (deptTimer.current) clearTimeout(deptTimer.current);
+    }, []);
 
     // ── Filter handlers ────────────────────────────────────────────────────────
 

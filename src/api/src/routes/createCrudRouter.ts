@@ -5,7 +5,7 @@ import { PagingQueryParams } from "./common";
 import { logger } from "../config/observability";
 
 /**
- * Translates collection-specific query-string params into a Cosmos FindSpec
+ * Translates collection-specific query-string params into a FindSpec
  * (conditions + optional sort order). Pagination (top/skip) is injected by
  * the router from the request's own query params, so do not set those here.
  */
@@ -22,7 +22,7 @@ export type SpecBuilder = (query: Record<string, string>) => Omit<FindSpec, "top
  *   DELETE /:id     – delete by id
  *
  * `getRepository` is a factory rather than a value so that the underlying
- * Cosmos DB container is resolved lazily — after configureCosmos has run.
+ * Firestore store is resolved lazily — after configureFirestore has run.
  *
  * `validate` is an optional per-collection validator called before every
  * POST (isUpdate=false) and PUT (isUpdate=true). When validation fails the
@@ -30,9 +30,26 @@ export type SpecBuilder = (query: Record<string, string>) => Omit<FindSpec, "top
  * (allowlisted + trimmed) body is forwarded to the repository.
  *
  * `buildSpec` is an optional collection-specific function that converts
- * query-string params into filter conditions sent to Cosmos, replacing the
- * old in-memory queryFilter pattern.
+ * query-string params into filter conditions applied by the repository.
  */
+const MAX_TOP = 1000;
+const DEFAULT_TOP = 100;
+
+/**
+ * Parses a pagination query param into a non-negative integer, falling back to
+ * `fallback` when absent or invalid. The result is clamped to [0, max].
+ */
+const parsePagingParam = (raw: string | undefined, fallback: number, max: number): number => {
+    if (raw === undefined) {
+        return fallback;
+    }
+    const parsed = Number(raw);
+    if (!Number.isInteger(parsed) || parsed < 0) {
+        return fallback;
+    }
+    return Math.min(parsed, max);
+};
+
 export const createCrudRouter = <T extends BaseEntity>(
     getRepository: () => BaseRepository<T>,
     label: string,
@@ -46,8 +63,8 @@ export const createCrudRouter = <T extends BaseEntity>(
         "/",
         async (req: Request<unknown, unknown, unknown, PagingQueryParams>, res) => {
             try {
-                const skip = req.query.skip ? parseInt(req.query.skip) : 0;
-                const top = req.query.top ? parseInt(req.query.top) : 100;
+                const skip = parsePagingParam(req.query.skip, 0, Number.MAX_SAFE_INTEGER);
+                const top = parsePagingParam(req.query.top, DEFAULT_TOP, MAX_TOP);
                 const spec: FindSpec = buildSpec
                     ? { ...buildSpec(req.query as Record<string, string>), top, skip }
                     : { top, skip };

@@ -38,8 +38,19 @@ const originList = (): string[] | string => {
 
     if (allowOrigins && allowOrigins !== "") {
         allowOrigins.split(",").forEach(origin => {
-            origins.push(origin.trim());
+            const trimmed = origin.trim();
+            if (trimmed !== "") {
+                origins.push(trimmed);
+            }
         });
+    }
+
+    if (origins.length === 0) {
+        logger.warn(
+            "API_ALLOW_ORIGINS is empty in a non-development environment — " +
+            "all cross-origin browser requests will be rejected by CORS. " +
+            "Set API_ALLOW_ORIGINS to a comma-separated list of allowed URLs.",
+        );
     }
 
     return origins;
