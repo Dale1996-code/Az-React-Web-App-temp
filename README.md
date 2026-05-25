@@ -1,6 +1,6 @@
 # Dales Operations
 
-A React web app with a Node.js API and Azure Cosmos DB (SQL API), deployed on GCP Cloud Run.
+A React web app with a Node.js API and Google Cloud Firestore (native mode), deployed on GCP Cloud Run.
 
 ## Application Overview
 
@@ -19,11 +19,10 @@ Dales Operations is a store operations management tool covering:
 |---|---|
 | Web frontend | GCP Cloud Run (nginx container) |
 | Node.js API | GCP Cloud Run |
-| Data store | Azure Cosmos DB (SQL API) |
+| Data store | Google Cloud Firestore (native mode) |
 
 For deployment setup and CI/CD, see:
-- [`docs/gcp-cloud-run-phase1.md`](docs/gcp-cloud-run-phase1.md) — runtime setup (Artifact Registry, Cosmos key, redirect URIs)
-- [`docs/gcp-deployment.md`](docs/gcp-deployment.md) — Phase 2 GCP CI/CD workflow setup
+- [`docs/gcp-deployment.md`](docs/gcp-deployment.md) — GCP CI/CD workflow setup
 - [`.github/workflows/gcp-deploy.yml`](.github/workflows/gcp-deploy.yml) — the CI/CD workflow itself
 
 For a concise operations reference, see **[RUNBOOK.md](RUNBOOK.md)**.
@@ -34,11 +33,12 @@ For a concise operations reference, see **[RUNBOOK.md](RUNBOOK.md)**.
 
 ### Environment Setup
 
-**API** — copy and fill in `src/api/.env.example`:
+**API** — copy `src/api/.env.example`. The defaults work for local development against the Firestore emulator or your `gcloud` default project:
 
 ```bash
 cp src/api/.env.example src/api/.env
-# Edit src/api/.env — set AZURE_COSMOS_ENDPOINT and AZURE_COSMOS_KEY
+# Optional: set GOOGLE_CLOUD_PROJECT, FIRESTORE_DATABASE_ID, or FIRESTORE_EMULATOR_HOST.
+# Run `gcloud auth application-default login` once to talk to a real Firestore database.
 ```
 
 **Web** — optional; defaults work out of the box:
@@ -182,7 +182,7 @@ gcloud logging read \
   --format=json | jq '.[].textPayload'
 ```
 
-Look for `Fatal startup error`, `Cannot find module`, or `Cosmos DB connection error`.
+Look for `Fatal startup error`, `Cannot find module`, or Firestore initialisation errors.
 
 ### Web frontend loads but shows blank data
 
@@ -194,8 +194,7 @@ Confirm `VITE_API_BASE_URL` is correctly baked into the bundle — check the Clo
 |---|---|
 | `API initialised – env=…` | Startup completed |
 | `API listening on port …` | Ready to accept traffic |
-| `Cosmos DB connected successfully!` | DB connection confirmed at startup |
-| `Cosmos DB connection error: …` | DB unreachable — check `AZURE_COSMOS_KEY` and endpoint |
+| `Firestore client initialised` | Firestore client constructed at startup |
 | `Fatal startup error: …` | Process crashed before listening |
 | `Auth: Azure Entra ID JWT enforcement enabled (tenant=…)` | Auth active |
 | `Auth: enforcement disabled — all requests allowed…` | Auth bypassed |
@@ -205,4 +204,4 @@ Confirm `VITE_API_BASE_URL` is correctly baked into the bundle — check the Clo
 
 ## Security
 
-The API validates Entra ID Bearer JWTs using Node.js built-in crypto (RS256, live JWKS from Entra ID). Cosmos DB is accessed via a primary key stored in GCP Secret Manager and injected at deploy time — no key is stored in source or environment files. Key Vault is not used in the GCP deployment.
+The API validates Entra ID Bearer JWTs using Node.js built-in crypto (RS256, live JWKS from Entra ID). Firestore is accessed via Application Default Credentials — on Cloud Run that is the runtime service account, granted `roles/datastore.user`. No database keys or secrets are stored in source, environment files, or Secret Manager.

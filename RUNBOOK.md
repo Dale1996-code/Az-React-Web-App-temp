@@ -27,25 +27,26 @@ These same steps run automatically in CI before any deploy.
 Deployments are driven by the GitHub Actions workflow at `.github/workflows/gcp-deploy.yml`.
 Push to `main`/`master` to trigger the full pipeline: build → test → deploy → smoke tests.
 
-For manual deployment or initial setup, see [docs/gcp-cloud-run-phase1.md](docs/gcp-cloud-run-phase1.md).
+For first-time GCP setup (Artifact Registry, Workload Identity Federation, IAM, GitHub secrets), see [docs/gcp-deployment.md](docs/gcp-deployment.md).
 
 ---
 
 ## 3. Environment Variables Reference
 
-### API Cloud Run service (set as service env vars or Secret Manager secrets)
+### API Cloud Run service (set as service env vars)
 
 | Variable | Purpose |
 |---|---|
 | `NODE_ENV` | `production` enables JWT auth enforcement |
-| `AZURE_COSMOS_ENDPOINT` | Cosmos DB URI |
-| `AZURE_COSMOS_DATABASE_NAME` | Database name (`DalesOperations`) |
-| `AZURE_COSMOS_KEY` | Cosmos DB primary key — store in Secret Manager |
+| `GOOGLE_CLOUD_PROJECT` | GCP project that owns the Firestore database |
+| `FIRESTORE_DATABASE_ID` | Firestore database id; defaults to `(default)` |
 | `API_ALLOW_ORIGINS` | CORS allowed origin(s) for the web service URL |
 | `AZURE_AD_TENANT_ID` | Required when auth is enabled |
 | `AZURE_AD_CLIENT_ID` | Required when auth is enabled — activates JWT enforcement |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | Optional; telemetry disabled if absent |
-| `AZURE_KEY_VAULT_ENDPOINT` | Do not set in Cloud Run — Key Vault is not used |
+| `REDIS_URL` | Optional; enables the dashboard Redis cache |
+
+Firestore authenticates via Application Default Credentials — no database key, secret, or env var is needed. The Cloud Run runtime SA must have `roles/datastore.user`.
 
 ### Web Cloud Run service (baked into the bundle as Docker build args)
 
@@ -60,13 +61,14 @@ For manual deployment or initial setup, see [docs/gcp-cloud-run-phase1.md](docs/
 ### Local development only (`src/api/.env`)
 
 ```env
-AZURE_COSMOS_ENDPOINT=https://<account>.documents.azure.com:443/
-AZURE_COSMOS_DATABASE_NAME=DalesOperations          # optional; this is the default
-AZURE_COSMOS_KEY=<your-cosmos-primary-key>
+# All values are optional — the API falls back to your active `gcloud` config.
+GOOGLE_CLOUD_PROJECT=your-gcp-project-id
+FIRESTORE_DATABASE_ID=(default)                     # only if using a named Firestore DB
+FIRESTORE_EMULATOR_HOST=localhost:8080              # use the local emulator instead
 APPLICATIONINSIGHTS_CONNECTION_STRING=              # optional; telemetry disabled if blank
 ```
 
-Copy from `src/api/.env.example`. See [README.md — Local Development](README.md#local-development).
+Copy from `src/api/.env.example`. Run `gcloud auth application-default login` once to talk to a real Firestore database. See [README.md — Local Development](README.md#local-development).
 
 ---
 
@@ -90,7 +92,7 @@ Playwright tests check all 7 routes render, `/health` returns 200, and the API i
 | Symptom | First check | What to look for |
 |---------|------------|-----------------|
 | App completely down (502/503) | Cloud Run → **Logs Explorer** | `Fatal startup error` or `Cannot find module` |
-| `/health` returns non-200 | Cloud Run logs | `Cosmos DB connection error` or crash message |
+| `/health` returns non-200 | Cloud Run logs | Firestore initialisation error or crash message |
 | Data missing / blank pages | Browser console | CORS errors, requests to `http://undefined` |
 | Auth 401 errors | Cloud Run logs → search `Auth:` | `Auth: token rejected –` with reason |
 | Deploy failed | GitHub Actions run | Build, push, or deploy step logs |
@@ -121,14 +123,4 @@ git push origin HEAD:main  # triggers CI deploy
 Alternatively, use the Cloud Run console to roll back to a previous revision directly
 (**Cloud Run → service → Revisions → select revision → Send traffic here**).
 
-Cosmos DB data is not affected by a code-only redeploy.
-
----
-
-## 7. Cosmos Key Rotation
-
-The Cosmos primary key is stored in GCP Secret Manager as `cosmos-db-key`. To rotate:
-
-1. Add a new secret version in Secret Manager with the new key value
-2. The Cloud Run service picks it up on the next deploy (the workflow uses `:latest`)
-3. Or restart the running revision: `gcloud run services update <API_SERVICE_NAME> --region=<REGION>`
+Firestore data is not affected by a code-only redeploy.
