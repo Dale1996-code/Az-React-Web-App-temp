@@ -101,11 +101,10 @@ These are not planned for the current release. Revisit if usage or team needs ch
 
 | Item | Rationale for deferral |
 |------|------------------------|
-| Continuation-token pagination | OFFSET/LIMIT is correct now; migrate when collection sizes require it |
+| Push equality filters into Firestore `where()` | List endpoints currently fetch the whole collection and evaluate filters in memory. Push simple equality filters down once any collection grows large enough to matter. |
 | Deployment slots (blue/green) | Cloud Run supports traffic splitting; rollback via revision promotion is adequate for now |
-| Redis cache for dashboard | Dashboard queries are bounded and fast at current data volumes |
+| Redis cache for dashboard | Optional and already wired up — set `GCP_VPC_CONNECTOR` and `REDIS_URL` to enable. Off by default while data volumes are small. |
 | Role-based authorization (RBAC) | All authenticated users currently have equal access; add when store-manager vs. associate distinction is needed |
-| Database backup exports | Cosmos DB point-in-time restore is available at account level; scheduled exports are optional |
-| Cosmos DB → Firestore/MongoDB Atlas migration | The `FilterCondition` / `BaseRepository` abstraction already has the right shape; only `buildSelectSql` and `cosmosClient.ts` need to change |
+| Database backup exports | Firestore supports scheduled managed exports to GCS; configure when retention requirements demand it |
 | IaC for GCP | Cloud Run config currently lives in workflow flags; migrate to Terraform or `service.yaml` once the shape stabilises |
 

@@ -1,6 +1,6 @@
 # Dales Operations — API
 
-Express + TypeScript REST API backed by Azure Cosmos DB (SQL API).
+Express + TypeScript REST API backed by Google Cloud Firestore (native mode).
 
 ## Prerequisites
 
@@ -17,22 +17,22 @@ cp .env.example .env
 
 On Windows PowerShell: `Copy-Item .env.example .env`
 
-The API authenticates with Cosmos DB using an account key (`AZURE_COSMOS_KEY`) in the GCP Cloud Run deployment. Set this in `src/api/.env` for local development (copy from `.env.example`).
+The API authenticates with Firestore using Application Default Credentials — on Cloud Run the runtime service account is used automatically. Locally, run `gcloud auth application-default login` once, or point the API at the Firestore emulator via `FIRESTORE_EMULATOR_HOST`.
 
 | Variable | Required | Default | Notes |
 |---|---|---|---|
-| `AZURE_COSMOS_ENDPOINT` | Yes | — | Cosmos DB account URI |
-| `AZURE_COSMOS_KEY` | Yes (local/prod) | — | Cosmos DB primary key; in CI injected from GCP Secret Manager |
-| `AZURE_COSMOS_DATABASE_NAME` | No | `DalesOperations` | Database name |
-| `AZURE_KEY_VAULT_ENDPOINT` | No | — | Do not set in Cloud Run — Key Vault is not used |
+| `GOOGLE_CLOUD_PROJECT` | No | — | GCP project that owns the Firestore database. Cloud Run resolves this from the metadata server; set explicitly for local dev. |
+| `FIRESTORE_DATABASE_ID` | No | `(default)` | Set only if you created a named (non-default) Firestore database. |
+| `FIRESTORE_EMULATOR_HOST` | No | — | Local-only override, e.g. `localhost:8080`. |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | No | — | API telemetry; skipped when blank |
 | `APPLICATIONINSIGHTS_ROLE_NAME` | No | `API` | Role label in Application Insights |
 | `API_ALLOW_ORIGINS` | No | — | Comma-separated CORS origins; not needed when `NODE_ENV=development` |
 | `PORT` | No | `3100` | HTTP listen port |
+| `REDIS_URL` | No | — | Enables the optional dashboard cache (Memorystore for Redis in production) |
 | `AZURE_AD_TENANT_ID` | Prod only | — | Entra ID tenant; required when `NODE_ENV=production` |
 | `AZURE_AD_CLIENT_ID` | Prod only | — | App Registration client ID; activates JWT enforcement |
 
-In GCP Cloud Run all of these are set as service environment variables or Secret Manager secrets by the CI workflow — you do not manage them manually in production.
+In GCP Cloud Run all of these are set as service environment variables by the CI workflow — you do not manage them manually in production.
 
 ## Commands
 
@@ -79,7 +79,7 @@ See the top-level `README.md#authentication` for the full setup walkthrough.
 
 All `GET /` list endpoints support `?top=N&skip=N` pagination (default: top=100, skip=0).
 
-Each collection also accepts collection-specific filters that are pushed server-side as Cosmos parameterized queries rather than fetched and filtered in memory:
+Each collection also accepts collection-specific filters that are applied in-memory after fetch (Firestore does not support case-insensitive or substring queries):
 
 | Collection | Supported filters |
 |---|---|
@@ -90,16 +90,8 @@ Each collection also accepts collection-specific filters that are pushed server-
 | `productivity` | `?date=YYYY-MM-DD`, `?employeeId=<id>` |
 | `summaries` | `?date=YYYY-MM-DD`, `?shiftLabel=<label>` |
 
-## Scalability notes (Phase 2)
+## Scalability notes
 
-**Before (Phase 1 and earlier):** All list endpoints called `readAll().fetchAll()` to load the entire container, then filtered and paginated in memory. The `/dashboard` endpoint loaded all six collections in full every request.
+Filtering and pagination happen in memory after the Firestore fetch. Firestore does not support case-insensitive comparisons or substring (`CONTAINS`) queries, so `BaseRepository.findWhere` / `findAll` evaluate the `FindSpec` via `evalCond` / `applySpec` on the documents returned from `getAll`. In test mode (`NODE_ENV=test`) the same evaluators run against an in-memory `Map`-backed store, so no real database is needed for tests.
 
-**After (Phase 2):** 
-- List endpoints use `findWhere()` which emits a parameterized Cosmos SQL query with `WHERE`, `ORDER BY`, and `OFFSET N LIMIT M` clauses — only matching rows are returned over the wire.
-- `/dashboard` fans out targeted queries: count queries (`SELECT VALUE COUNT(1) FROM c WHERE ...`) for totals, bounded `LIMIT 5` queries for lists, and point reads for employee name lookups. No full-collection scans.
-- In test mode (`NODE_ENV=test`) the same `FindSpec` structs are evaluated against the in-memory mock store, so no real database is needed for tests.
-
-**Tradeoffs:**
-- Cosmos SQL `OFFSET N LIMIT M` pagination is not keyset-based; deep offsets (large skip values) still scan the skipped rows on the server. For the current data volumes this is acceptable; switch to continuation tokens if pages grow very large.
-- `ORDER BY` on a field not covered by a composite index will trigger a full-partition scan in Cosmos. Add composite indexes on the Cosmos account (Azure Portal → Cosmos DB → Data Explorer → container Settings → Indexing Policy) as query patterns are confirmed.
-- The dashboard `followUpDate <= date` condition requires `followUpDate` to be indexed. Cosmos indexes all paths by default, so this works out of the box.
+**Tradeoff:** every list endpoint currently reads the full collection before filtering. For the current data volumes this is acceptable; once any collection grows large enough to matter, push the simple equality filters (e.g. `status`, `department`, `employeeId`) down into Firestore via `CollectionReference.where()` and only fall back to in-memory evaluation for the case-insensitive / substring conditions.
